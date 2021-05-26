@@ -35,7 +35,7 @@ func TestLayerRules(t *testing.T) {
 				layers[s.Layer] = struct{}{}
 			}
 		}
-		for layer, _ := range layers {
+		for layer := range layers {
 			d.MSS().LayerRules(layer)
 		}
 		r.Close()
@@ -55,20 +55,20 @@ func TestRuleSame(t *testing.T) {
 	assert.False(t, Rule{Zoom: NewZoomRange(LT, 5)}.same(Rule{Zoom: NewZoomRange(LTE, 5)}))
 
 	assert.True(t, Rule{
-		Layer: "Bar", Attachment: "Foo", Filters: []Filter{Filter{"foo", EQ, "foo"}},
+		Layer: "Bar", Attachment: "Foo", Filters: []Filter{{"foo", EQ, "foo"}},
 	}.same(Rule{
-		Layer: "Bar", Attachment: "Foo", Filters: []Filter{Filter{"foo", EQ, "foo"}}},
+		Layer: "Bar", Attachment: "Foo", Filters: []Filter{{"foo", EQ, "foo"}}},
 	))
 
 	assert.True(t, Rule{
-		Layer: "Bar", Attachment: "Foo", Filters: []Filter{Filter{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 4),
+		Layer: "Bar", Attachment: "Foo", Filters: []Filter{{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 4),
 	}.childOf(Rule{
-		Layer: "Bar", Attachment: "Foo", Filters: []Filter{Filter{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 4)},
+		Layer: "Bar", Attachment: "Foo", Filters: []Filter{{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 4)},
 	))
 	assert.False(t, Rule{
-		Layer: "Bar", Attachment: "Foo", Filters: []Filter{Filter{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 4),
+		Layer: "Bar", Attachment: "Foo", Filters: []Filter{{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 4),
 	}.childOf(Rule{
-		Layer: "Bar", Attachment: "Foo", Filters: []Filter{Filter{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 5)},
+		Layer: "Bar", Attachment: "Foo", Filters: []Filter{{"foo", EQ, "foo"}}, Zoom: NewZoomRange(EQ, 5)},
 	))
 
 }
@@ -84,25 +84,25 @@ func TestRuleChildOf(t *testing.T) {
 	assert.False(t, Rule{Layer: "roads", Attachment: "inline"}.childOf(Rule{Layer: "roads", Attachment: "coutline"}))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 	}.childOf(Rule{Layer: "roads", Attachment: "inline"}))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 	}.childOf(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}}},
 	))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 	}.childOf(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}}},
 	))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}, Filter{"oneway", EQ, "yes"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}, {"oneway", EQ, "yes"}},
 	}.childOf(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}}},
 	))
 
 	assert.True(t, Rule{Zoom: NewZoomRange(EQ, 4)}.childOf(Rule{Zoom: NewZoomRange(LTE, 5)}))
@@ -124,50 +124,50 @@ func TestRuleAffectedBy(t *testing.T) {
 	assert.False(t, Rule{Layer: "roads", Attachment: "inline"}.overlaps(Rule{Layer: "roads", Attachment: "coutline"}))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 	}.overlaps(Rule{Layer: "roads", Attachment: "inline"}))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}}, Zoom: NewZoomRange(EQ, 5),
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}}, Zoom: NewZoomRange(EQ, 5),
 	}.overlaps(Rule{Layer: "roads", Attachment: "inline", Zoom: AllZoom}))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}}, Zoom: NewZoomRange(EQ, 5),
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}}, Zoom: NewZoomRange(EQ, 5),
 	}.overlaps(Rule{Layer: "roads", Attachment: "inline", Zoom: NewZoomRange(LTE, 5)}))
 
 	assert.False(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}}, Zoom: NewZoomRange(EQ, 5),
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}}, Zoom: NewZoomRange(EQ, 5),
 	}.overlaps(Rule{Layer: "roads", Attachment: "inline", Zoom: NewZoomRange(LT, 5)}))
 
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"oneway", EQ, "yes"}, Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"oneway", EQ, "yes"}, {"highway", EQ, "path"}},
 		Zoom: NewZoomRange(EQ, 4),
 	}.overlaps(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 		Zoom: NewZoomRange(GT, 3)},
 	))
-	// same with different filter order
+
 	assert.True(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}, Filter{"oneway", EQ, "yes"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}, {"oneway", EQ, "yes"}},
 		Zoom: NewZoomRange(EQ, 4),
 	}.overlaps(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 		Zoom: NewZoomRange(GT, 3)},
 	))
 
 	assert.False(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"oneway", EQ, "yes"}, Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"oneway", EQ, "yes"}, {"highway", EQ, "path"}},
 		Zoom: NewZoomRange(EQ, 4),
 	}.overlaps(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 		Zoom: NewZoomRange(LT, 4)},
 	))
-	// same with different filter order
+
 	assert.False(t, Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}, Filter{"oneway", EQ, "yes"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}, {"oneway", EQ, "yes"}},
 		Zoom: NewZoomRange(EQ, 4),
 	}.overlaps(Rule{
-		Layer: "roads", Attachment: "inline", Filters: []Filter{Filter{"highway", EQ, "path"}},
+		Layer: "roads", Attachment: "inline", Filters: []Filter{{"highway", EQ, "path"}},
 		Zoom: NewZoomRange(LT, 4)},
 	))
 
@@ -178,39 +178,39 @@ func TestRuleAffectedBy(t *testing.T) {
 
 func TestFilterIsSubset(t *testing.T) {
 	assert.True(t, filterIsSubset(nil, nil))
-	assert.True(t, filterIsSubset(nil, []Filter{Filter{"foo", EQ, "bar"}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", EQ, "bar"}}, []Filter{Filter{"foo", EQ, "bar"}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", EQ, "bar"}}, []Filter{Filter{"baz", EQ, "bar"}, Filter{"foo", EQ, "bar"}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", EQ, "barbaz"}}, []Filter{Filter{"baz", EQ, "bar"}, Filter{"foo", EQ, "bar"}}))
+	assert.True(t, filterIsSubset(nil, []Filter{{"foo", EQ, "bar"}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", EQ, "bar"}}, []Filter{{"foo", EQ, "bar"}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", EQ, "bar"}}, []Filter{{"baz", EQ, "bar"}, {"foo", EQ, "bar"}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", EQ, "barbaz"}}, []Filter{{"baz", EQ, "bar"}, {"foo", EQ, "bar"}}))
 }
 
 func TestFilterIsSubset_TODO(t *testing.T) {
 	t.Skip("TODO: implement filterIsSubset for numerical comparsions")
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", GTE, 5}}, []Filter{Filter{"foo", EQ, 5}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", GT, 4}}, []Filter{Filter{"foo", EQ, 5}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", LTE, 5}}, []Filter{Filter{"foo", EQ, 5}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", LT, 6}}, []Filter{Filter{"foo", EQ, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", GTE, 5}}, []Filter{{"foo", EQ, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", GT, 4}}, []Filter{{"foo", EQ, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", LTE, 5}}, []Filter{{"foo", EQ, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", LT, 6}}, []Filter{{"foo", EQ, 5}}))
 
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", GTE, 6}}, []Filter{Filter{"foo", EQ, 5}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", GT, 5}}, []Filter{Filter{"foo", EQ, 5}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", LTE, 4}}, []Filter{Filter{"foo", EQ, 5}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", LT, 5}}, []Filter{Filter{"foo", EQ, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", GTE, 6}}, []Filter{{"foo", EQ, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", GT, 5}}, []Filter{{"foo", EQ, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", LTE, 4}}, []Filter{{"foo", EQ, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", LT, 5}}, []Filter{{"foo", EQ, 5}}))
 
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", GTE, 5}}, []Filter{Filter{"foo", GT, 5}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", GT, 4}}, []Filter{Filter{"foo", GT, 5}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", LT, 10}}, []Filter{Filter{"foo", GT, 5}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", LTE, 10}}, []Filter{Filter{"foo", GT, 5}}))
-	assert.False(t, filterIsSubset([]Filter{Filter{"foo", EQ, 6}}, []Filter{Filter{"foo", GT, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", GTE, 5}}, []Filter{{"foo", GT, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", GT, 4}}, []Filter{{"foo", GT, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", LT, 10}}, []Filter{{"foo", GT, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", LTE, 10}}, []Filter{{"foo", GT, 5}}))
+	assert.False(t, filterIsSubset([]Filter{{"foo", EQ, 6}}, []Filter{{"foo", GT, 5}}))
 
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", LTE, 5}}, []Filter{Filter{"foo", LT, 5}}))
-	assert.True(t, filterIsSubset([]Filter{Filter{"foo", LT, 5}}, []Filter{Filter{"foo", LT, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", LTE, 5}}, []Filter{{"foo", LT, 5}}))
+	assert.True(t, filterIsSubset([]Filter{{"foo", LT, 5}}, []Filter{{"foo", LT, 5}}))
 }
 
 func BenchmarkFilterIsSubset(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		filterIsSubset(
-			[]Filter{Filter{"foo1", EQ, "bar"}, Filter{"foo2", EQ, "bar"}, Filter{"foo3", EQ, "bar"}},
-			[]Filter{Filter{"baz", EQ, "bar"}, Filter{"baz", EQ, "bar"}, Filter{"foo1", EQ, "bar"}, Filter{"foo2", EQ, "bar"}, Filter{"foo3", EQ, "bar"}},
+			[]Filter{{"foo1", EQ, "bar"}, {"foo2", EQ, "bar"}, {"foo3", EQ, "bar"}},
+			[]Filter{{"baz", EQ, "bar"}, {"baz", EQ, "bar"}, {"foo1", EQ, "bar"}, {"foo2", EQ, "bar"}, {"foo3", EQ, "bar"}},
 		)
 	}
 }
@@ -232,8 +232,6 @@ func TestCombineRule(t *testing.T) {
 }
 
 func TestSortedRulesNoInfinitiveLoop(t *testing.T) {
-	// check for bug were r.overlaps(o) returns rule identical with o which resulted
-	// in more rules that returned identical rules -> infinite loop
 	rules := []Rule{
 		{Filters: []Filter{{"bar", EQ, "foo"}}, Zoom: AllZoom, Properties: NewProperties("width", 1)},
 		{Filters: []Filter{}, Zoom: NewZoomRange(GTE, 12), Properties: NewProperties("width", 1)},

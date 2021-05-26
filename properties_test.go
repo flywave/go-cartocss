@@ -75,7 +75,7 @@ func TestPropertiesGet(t *testing.T) {
 	p := &Properties{}
 	p.setPos(key{name: "num"}, 2.0, position{})
 	p.setPos(key{name: "string"}, "foo", position{})
-	p.setPos(key{name: "color"}, color.Color{0, 0, 0, 0, false}, position{})
+	p.setPos(key{name: "color"}, color.Color{H: 0, S: 0, L: 0, A: 0, Perceptual: false}, position{})
 	p.setPos(key{name: "floatlist"}, []Value{0.0, 1.1}, position{})
 	p.setPos(key{name: "stringlist"}, []Value{"foo", "bar"}, position{})
 	p.setPos(key{name: "stoplist"}, []Value{Stop{}}, position{})
@@ -94,7 +94,7 @@ func TestPropertiesGet(t *testing.T) {
 		t.Error(ok, v)
 	}
 
-	if v, ok := p.GetColor("color"); !ok || v != (color.Color{0, 0, 0, 0, false}) {
+	if v, ok := p.GetColor("color"); !ok || v != (color.Color{H: 0, S: 0, L: 0, A: 0, Perceptual: false}) {
 		t.Error(ok, v)
 	}
 	if v, ok := p.GetColor("num"); ok {
