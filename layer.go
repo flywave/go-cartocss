@@ -12,8 +12,9 @@ const (
 
 type Layer struct {
 	ID              string
+	CssIds          []string
 	Classes         []string
-	SRS             string
+	SRS             *string
 	Datasource      Datasource
 	Type            GeometryType
 	Active          bool
@@ -22,4 +23,7 @@ type Layer struct {
 	PostLabelCache  bool
 	CacheFeatures   bool
 	ScaleFactor     float64
+	Maxzoom         uint32
+	Minzoom         uint32
+	Dataset         string
 }

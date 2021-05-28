@@ -6,32 +6,47 @@ import (
 	"io/ioutil"
 	"strings"
 
+	"github.com/flywave/go-cartocss/model"
 	"gopkg.in/yaml.v2"
 )
 
 type MML struct {
-	Name        string
-	Layers      []Layer
-	Stylesheets []string
-	Map         Map
+	Name          string
+	Layers        []Layer
+	Stylesheets   []string
+	SRS           *string
+	BBOX          model.Bounds
+	Scale         int
+	Center        model.Position3
+	Minzoom       int
+	Maxzoom       int
+	Interactivity bool
 }
 
 type auxMML struct {
-	Name        string
-	Stylesheets []string   `yaml:"Stylesheet"`
-	Layers      []auxLayer `yaml:"Layer"`
-	Map         Map        `yaml:"Map"`
+	Name          string
+	Stylesheets   []string        `yaml:"Stylesheet"`
+	Layers        []auxLayer      `yaml:"Layer"`
+	SRS           *string         `yaml:"srs,omitempty"`
+	BBOX          model.Bounds    `yaml:"bounds"`
+	Scale         int             `yaml:"scale"`
+	Center        model.Position3 `yaml:"center"`
+	Minzoom       int             `yaml:"minzoom"`
+	Maxzoom       int             `yaml:"maxzoom"`
+	Interactivity bool            `yaml:"interactivity"`
 }
 
 type auxLayer struct {
-	Datasource map[string]interface{} `yaml:"Datasource"`
-	Geometry   string
-	ID         string
-	Name       string
-	Class      string
-	SRS        string
-	Status     string
-	Properties map[string]interface{}
+	Datasource map[string]interface{} `yaml:"datasource"`
+	Geometry   string                 `yaml:"geometry"`
+	ID         string                 `yaml:"id"`
+	Name       string                 `yaml:"name"`
+	Class      string                 `yaml:"class"`
+	CssIds     string                 `yaml:"css_ids"`
+	SRS        *string                `yaml:"srs,omitempty"`
+	Status     string                 `yaml:"status"`
+	Properties map[string]interface{} `yaml:"properties"`
+	Dataset    string                 `yaml:"dataset"`
 }
 
 func newLayer(l auxLayer) (*Layer, error) {
@@ -46,13 +61,14 @@ func newLayer(l auxLayer) (*Layer, error) {
 	}
 
 	classes := strings.Split(l.Class, " ")
+	ids := strings.Split(l.CssIds, " ")
 	groupBy, _ := l.Properties["group-by"].(string)
 	clearLabelCache, _ := l.Properties["clear-label-cache"].(string)
 	cacheFeatures, _ := l.Properties["cache-features"].(string)
-
-	return &Layer{
+	ly := &Layer{
 		ID:              l.ID,
 		Classes:         classes,
+		CssIds:          ids,
 		Datasource:      ds,
 		SRS:             l.SRS,
 		Type:            parseGeometryType(l.Geometry),
@@ -60,7 +76,17 @@ func newLayer(l auxLayer) (*Layer, error) {
 		GroupBy:         groupBy,
 		ClearLabelCache: clearLabelCache == "on",
 		CacheFeatures:   cacheFeatures == "on",
-	}, nil
+		Dataset:         l.Dataset,
+	}
+	maxzoom, ok := l.Properties["maxzoom"].(int)
+	if ok {
+		ly.Maxzoom = uint32(maxzoom)
+	}
+	minzoom, ok1 := l.Properties["minzoom"].(int)
+	if ok1 {
+		ly.Minzoom = uint32(minzoom)
+	}
+	return ly, nil
 }
 
 func parseGeometryType(t string) GeometryType {
@@ -134,10 +160,8 @@ func newDatasource(params map[string]interface{}) (Datasource, error) {
 		return GeoJson{
 			Filename: d["file"],
 		}, nil
-	} else if d["type"] == "" {
-		return nil, nil
 	} else {
-		return nil, fmt.Errorf("unsupported datasource type %s in %v", d["type"], d)
+		return nil, nil
 	}
 }
 
@@ -178,10 +202,16 @@ func Parse(r io.Reader) (*MML, error) {
 	}
 
 	m := MML{
-		Name:        aux.Name,
-		Layers:      layers,
-		Stylesheets: aux.Stylesheets,
-		Map:         aux.Map,
+		Name:          aux.Name,
+		Layers:        layers,
+		Stylesheets:   aux.Stylesheets,
+		SRS:           aux.SRS,
+		BBOX:          aux.BBOX,
+		Scale:         aux.Scale,
+		Center:        aux.Center,
+		Minzoom:       aux.Minzoom,
+		Maxzoom:       aux.Maxzoom,
+		Interactivity: aux.Interactivity,
 	}
 
 	return &m, nil

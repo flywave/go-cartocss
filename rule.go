@@ -101,6 +101,8 @@ func (s bySpecifity) Less(i, j int) bool {
 	return s.rules[i].order < s.rules[j].order
 }
 
+// filterIsSubset checks whether all a filters are also in b filters (b might have more filters).
+// filters need to be sorted alpha-numerical.
 func filterIsSubset(a, b []Filter) bool {
 	if len(a) > len(b) {
 		return false
@@ -117,20 +119,99 @@ func filterIsSubset(a, b []Filter) bool {
 				// field not in b
 				return false
 			}
-			// TODO: handle subfilter like <=6 =5, >=6 >8, etc.
-			if a[ia].CompOp != b[ib].CompOp || a[ia].Value != b[ib].Value {
-				return false
-			} else {
-				// filter is equal
+
+			if a[ia].CompOp == b[ib].CompOp && a[ia].Value == b[ib].Value {
 				found = true
 				break
 			}
+			if filterContains(a[ia], b[ib]) {
+				found = true
+				break
+			}
+			return false
 		}
 		if !found {
 			return false
 		}
 	}
 	return true
+}
+
+func filterContains(a, b Filter) bool {
+	var av, bv float64
+	var ok bool
+
+	av, ok = a.Value.(float64)
+	if !ok {
+		tmp, ok := a.Value.(int)
+		if !ok {
+			return false
+		}
+		av = float64(tmp)
+	}
+	bv, ok = b.Value.(float64)
+	if !ok {
+		tmp, ok := b.Value.(int)
+		if !ok {
+			return false
+		}
+		bv = float64(tmp)
+	}
+	switch a.CompOp {
+	case GT:
+		// >6 -> =7, =8, ...
+		if b.CompOp == EQ && bv > av {
+			return true
+		}
+		// >6 -> >6, >7, ...
+		if b.CompOp == GT && bv >= av {
+			return true
+		}
+		// >=6 -> >=6, >=7, ...
+		if b.CompOp == GTE && bv >= av {
+			return true
+		}
+	case GTE:
+		// >=6 -> =6, =7, ...
+		if b.CompOp == EQ && bv >= av {
+			return true
+		}
+		// >=6 -> >6, >7, ...
+		if b.CompOp == GT && bv >= av {
+			return true
+		}
+		// >=6 -> >=6, >=7, ...
+		if b.CompOp == GTE && bv >= av {
+			return true
+		}
+	case LT:
+		// <6 -> =5, =4, ...
+		if b.CompOp == EQ && bv < av {
+			return true
+		}
+		// <6 -> <6, <5, ...
+		if b.CompOp == LT && bv <= av {
+			return true
+		}
+		// <=6 -> <=6, <=5, ...
+		if b.CompOp == LTE && bv <= av {
+			return true
+		}
+	case LTE:
+		// <=6 -> =6, =5, ...
+		if b.CompOp == EQ && bv <= av {
+			return true
+		}
+		// <=6 -> <6, <5, ...
+		if b.CompOp == LT && bv <= av {
+			return true
+		}
+		// <=6 -> <=6, <=5, ...
+		if b.CompOp == LTE && bv <= av {
+			return true
+		}
+	}
+	return false
 }
 
 // filterOverlap returns true if a does not contain any filters that conflicts with filters of b
@@ -291,12 +372,12 @@ func (m *MSS) Layers() []string {
 }
 
 // LayerRules returns all Rules for this layer.
-func (m *MSS) LayerRules(layer string, classes ...string) []Rule {
-	return m.LayerZoomRules(layer, InvalidZoom, classes...)
+func (m *MSS) LayerRules(layer string, cssIds []string, classes ...string) []Rule {
+	return m.LayerZoomRules(layer, cssIds, InvalidZoom, classes...)
 }
 
 // LayerZoomRules returns all Rules for this layer within the specified ZoomRange.
-func (m *MSS) LayerZoomRules(layer string, zoom ZoomRange, classes ...string) []Rule {
+func (m *MSS) LayerZoomRules(layer string, cssIds []string, zoom ZoomRange, classes ...string) []Rule {
 	attachments := make(map[string]int) // store order of first appearance
 	rules := []Rule{}
 	order := 1
@@ -318,10 +399,16 @@ func (m *MSS) LayerZoomRules(layer string, zoom ZoomRange, classes ...string) []
 				Zoom:       parent.Zoom,
 			}
 			if s.Layer != "" {
-				if s.Layer != layer {
-					continue
+				for _, id := range cssIds {
+					if s.Layer != id {
+						continue
+					}
+					current.Layer = s.Layer
+					break
 				}
-				current.Layer = s.Layer
+			}
+			if current.Layer == "" {
+				continue
 			}
 			foundClass := false
 			if s.Class != "" {
@@ -363,34 +450,32 @@ func (m *MSS) LayerZoomRules(layer string, zoom ZoomRange, classes ...string) []
 				}
 			}
 
-			if (s.Layer == layer || s.Layer == "") && (foundClass || s.Class == "") {
-				// carto adds empty properties, eg.
-				// type=baz gets added to foo even if zoom does not match in nested define
-				// #foo[zoom=18],
-				// #bar[zoom=19] {
-				//   [type='baz'] { [zoom=19] { line-width: 10 }
-				// }
+			// carto adds empty properties, eg.
+			// type=baz gets added to foo even if zoom does not match in nested define
+			// #foo[zoom=18],
+			// #bar[zoom=19] {
+			//   [type='baz'] { [zoom=19] { line-width: 10 }
+			// }
 
-				if node.properties != nil && !node.properties.isEmpty() {
-					order += 1
-					r := Rule{
-						Layer:      current.Layer,
-						Class:      current.Class,
-						Attachment: current.Attachment,
-						Filters:    append([]Filter{}, current.Filters...),
-						Zoom:       current.Zoom,
-						Properties: node.properties.clone(),
-						order:      order,
-					}
-					spec := r.specificity()
-					for _, k := range r.Properties.keys() {
-						r.Properties.setSpecificity(k, spec)
-					}
-					rules = append(rules, r)
+			if node.properties != nil && !node.properties.isEmpty() {
+				order += 1
+				r := Rule{
+					Layer:      current.Layer,
+					Class:      current.Class,
+					Attachment: current.Attachment,
+					Filters:    append([]Filter{}, current.Filters...),
+					Zoom:       current.Zoom,
+					Properties: node.properties.clone(),
+					order:      order,
 				}
-				for _, n := range node.blocks {
-					collect(n, current)
+				spec := r.specificity()
+				for _, k := range r.Properties.keys() {
+					r.Properties.setSpecificity(k, spec)
 				}
+				rules = append(rules, r)
+			}
+			for _, n := range node.blocks {
+				collect(n, current)
 			}
 		}
 	}

@@ -6,7 +6,7 @@ import (
 
 type XMLMap struct {
 	XMLName    xml.Name    `xml:"Map"`
-	SRS        string      `xml:"srs,attr"`
+	SRS        *string     `xml:"srs,attr"`
 	BgColor    *string     `xml:"background-color,attr"`
 	Parameters []Parameter `xml:"Parameters>Parameter"`
 	FontSets   []FontSet   `xml:"FontSet"`
@@ -16,7 +16,7 @@ type XMLMap struct {
 
 type Parameter struct {
 	Name  string `xml:"name,attr"`
-	Value string `xml:",chardata"`
+	Value string `xml:",cdata"`
 }
 
 type FontSet struct {
@@ -182,7 +182,7 @@ type TextSymbolizer struct {
 	LineSpacing            *string  `xml:"line-spacing,attr"`
 	MinimumDistance        *string  `xml:"minimum-distance,attr"`
 	MinimumPadding         *string  `xml:"minimum-padding,attr"`
-	Name                   *string  `xml:",chardata"`
+	Name                   *string  `xml:",cdata"`
 	Opacity                *string  `xml:"opacity,attr"`
 	Orientation            *string  `xml:"orientation,attr"`
 	Placement              *string  `xml:"placement,attr"`
@@ -264,7 +264,7 @@ type ShieldSymbolizer struct {
 	LineSpacing            *string  `xml:"line-spacing,attr"`
 	MinimumDistance        *string  `xml:"minimum-distance,attr"`
 	MinimumPadding         *string  `xml:"minimum-padding,attr"`
-	Name                   *string  `xml:",chardata"`
+	Name                   *string  `xml:",cdata"`
 	Opacity                *string  `xml:"opacity,attr"`
 	Placement              *string  `xml:"placement,attr"`
 	PlacementType          *string  `xml:"placement-type,attr"`

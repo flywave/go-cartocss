@@ -81,12 +81,6 @@ func (b *Builder) Build() error {
 		return err
 	}
 
-	if m, ok := b.dstMap.(MapZoomScaleSetter); ok {
-		if mmlObj != nil && mmlObj.Map.ZoomScales != nil {
-			m.SetZoomScales(mmlObj.Map.ZoomScales)
-		}
-	}
-
 	if b.mml == "" {
 		layerIDs = carto.MSS().Layers()
 		for _, layerID := range layerIDs {
@@ -96,15 +90,17 @@ func (b *Builder) Build() error {
 		}
 	}
 
+	b.dstMap.AddParameter(mmlObj)
+
 	for _, l := range layers {
-		rules := carto.MSS().LayerRules(l.ID, l.Classes...)
+		rules := carto.MSS().LayerRules(l.ID, l.CssIds, l.Classes...)
 
 		if b.dumpRules != nil {
 			for _, r := range rules {
 				fmt.Fprintln(b.dumpRules, r.String())
 			}
 		}
-		if len(rules) > 0 && (l.Active || b.includeInactive) {
+		if l.Active || b.includeInactive {
 			b.dstMap.AddLayer(l, rules)
 		}
 	}
@@ -132,6 +128,7 @@ type Writer interface {
 
 type Map interface {
 	AddLayer(cartocss.Layer, []cartocss.Rule)
+	AddParameter(*cartocss.MML)
 }
 
 type MapWriter interface {
@@ -150,16 +147,11 @@ func BuildMapFromString(m Map, mml *cartocss.MML, style string) error {
 		return err
 	}
 
-	if m, ok := m.(MapZoomScaleSetter); ok {
-		if mml.Map.ZoomScales != nil {
-			m.SetZoomScales(mml.Map.ZoomScales)
-		}
-	}
+	m.AddParameter(mml)
 
 	for _, l := range mml.Layers {
-		rules := carto.MSS().LayerRules(l.ID, l.Classes...)
-
-		if len(rules) > 0 {
+		rules := carto.MSS().LayerRules(l.ID, l.CssIds, l.Classes...)
+		if l.Active {
 			m.AddLayer(l, rules)
 		}
 	}

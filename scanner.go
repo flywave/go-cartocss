@@ -240,6 +240,21 @@ func init() {
 
 // Scanner --------------------------------------------------------------------
 
+func ScannerIds(css string) []string {
+	scan := newScanner(css)
+	var ids []string
+	for {
+		t := scan.Next()
+		if t.t == tokenEOF {
+			break
+		}
+		if t.t == tokenHash {
+			ids = append(ids, string([]byte(t.value)[1:]))
+		}
+	}
+	return ids
+}
+
 // New returns a new CSS scanner for the given input.
 func newScanner(input string) *scanner {
 	// Normalize newlines.
