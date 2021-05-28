@@ -8,7 +8,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/flywave/go-cartocss"
+	cartocss "github.com/flywave/go-cartocss"
 )
 
 type CartoCSS struct {

@@ -3,7 +3,7 @@ package mapnik
 import (
 	"strings"
 
-	"github.com/flywave/go-cartocss/cartocss"
+	cartocss "github.com/flywave/go-cartocss"
 )
 
 func filterItems(rules []cartocss.Rule) map[string]map[string]struct{} {

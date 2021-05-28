@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flywave/go-cartocss"
+	cartocss "github.com/flywave/go-cartocss"
 	"github.com/flywave/go-cartocss/config"
 )
 

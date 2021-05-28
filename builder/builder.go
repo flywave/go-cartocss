@@ -8,7 +8,7 @@ import (
 
 	"github.com/flywave/go-cartocss/color"
 
-	"github.com/flywave/go-cartocss"
+	cartocss "github.com/flywave/go-cartocss"
 	"github.com/flywave/go-cartocss/config"
 )
 
