@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"fmt"
-
 	"github.com/flywave/go-cartocss/color"
+
+	"fmt"
 )
 
 type attr struct {
@@ -22,6 +22,8 @@ type key struct {
 	instance string
 }
 
+// Properties is a map of all defined attributes for a rule.
+// Use prop.GetXxx() to get typed properties.
 type Properties struct {
 	values          map[key]attr
 	defaultInstance string
@@ -100,7 +102,7 @@ func (p *Properties) updateMissing(o *Properties) {
 func (p *Properties) keys() []key {
 	keys := make([]key, len(p.values))
 	i := 0
-	for k := range p.values {
+	for k, _ := range p.values {
 		keys[i] = k
 		i += 1
 	}
@@ -194,6 +196,16 @@ func SortedPrefixes(p *Properties, prefixes []string) []Prefix {
 		result[i] = Prefix{Name: p.prefix, Instance: p.instance}
 	}
 	return result
+}
+
+func (p *Properties) GetKV() ([]string, []Value) {
+	ks := []string{}
+	vs := []Value{}
+	for k, v := range p.values {
+		ks = append(ks, k.name)
+		vs = append(vs, v.value)
+	}
+	return ks, vs
 }
 
 // SetDefaultInstance sets the instance name used for all following GetXXX calls.

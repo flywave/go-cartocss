@@ -45,9 +45,10 @@ var Maker2 = maker{mapnik2: true}
 var Maker3 = maker{}
 
 func New(locator config.Locator) *Map {
+	srs := "+init=epsg:3857"
 	return &Map{
 		fontSets:    make(map[string]string),
-		XML:         &XMLMap{SRS: "+init=epsg:3857"},
+		XML:         &XMLMap{SRS: &srs},
 		locator:     locator,
 		scaleFactor: 1.0,
 		zoomScales:  webmercZoomScales,
