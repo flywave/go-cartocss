@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"github.com/flywave/go-cartocss/model"
 	"gopkg.in/yaml.v2"
 )
 
@@ -15,9 +14,9 @@ type MML struct {
 	Layers        []Layer
 	Stylesheets   []string
 	SRS           *string
-	BBOX          model.Bounds
+	BBOX          [4]float32
 	Scale         int
-	Center        model.Position3
+	Center        [3]float32
 	Minzoom       int
 	Maxzoom       int
 	Interactivity bool
@@ -25,15 +24,15 @@ type MML struct {
 
 type auxMML struct {
 	Name          string
-	Stylesheets   []string        `yaml:"Stylesheet"`
-	Layers        []auxLayer      `yaml:"Layer"`
-	SRS           *string         `yaml:"srs,omitempty"`
-	BBOX          model.Bounds    `yaml:"bounds"`
-	Scale         int             `yaml:"scale"`
-	Center        model.Position3 `yaml:"center"`
-	Minzoom       int             `yaml:"minzoom"`
-	Maxzoom       int             `yaml:"maxzoom"`
-	Interactivity bool            `yaml:"interactivity"`
+	Stylesheets   []string   `yaml:"Stylesheet"`
+	Layers        []auxLayer `yaml:"Layer"`
+	SRS           *string    `yaml:"srs,omitempty"`
+	BBOX          [4]float32 `yaml:"bounds"`
+	Scale         int        `yaml:"scale"`
+	Center        [3]float32 `yaml:"center"`
+	Minzoom       int        `yaml:"minzoom"`
+	Maxzoom       int        `yaml:"maxzoom"`
+	Interactivity bool       `yaml:"interactivity"`
 }
 
 type auxLayer struct {
