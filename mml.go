@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -157,6 +158,33 @@ func newDatasource(params map[string]interface{}) (interface{}, error) {
 	} else if d["type"] == "geojson" {
 		return GeoJson{
 			Filename: d["file"],
+		}, nil
+	} else if d["type"] == DATASET {
+		return Dataset{
+			Type: DATASET,
+			Id:   d["id"],
+			Name: d["name"],
+		}, nil
+	} else if d["type"] == DATASET_RASTER {
+		mt, _ := strconv.ParseBool(d["multi"])
+		lox, _ := strconv.ParseFloat(d["lox"], 64)
+		loy, _ := strconv.ParseFloat(d["loy"], 64)
+		hix, _ := strconv.ParseFloat(d["hix"], 64)
+		hiy, _ := strconv.ParseFloat(d["hiy"], 64)
+		tilesize, _ := strconv.ParseUint(d["tilesize"], 10, 32)
+		tileStride, _ := strconv.ParseUint(d["hiy"], 10, 32)
+
+		return DatasetRaster{
+			Type:       DATASET,
+			Id:         d["id"],
+			Name:       d["name"],
+			Multi:      mt,
+			Lox:        lox,
+			Loy:        loy,
+			Hix:        hix,
+			Hiy:        hiy,
+			Tilesize:   uint32(tilesize),
+			TileStride: uint32(tileStride),
 		}, nil
 	} else {
 		return nil, nil
