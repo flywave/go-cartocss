@@ -253,7 +253,6 @@ func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 			{Name: "name", Value: ds.Name},
 		}
 	case cartocss.DatasetRaster:
-
 		params = []Parameter{
 			{Name: "id", Value: ds.Id},
 			{Name: "name", Value: ds.Name},
