@@ -15,7 +15,7 @@ type Layer struct {
 	CssIds          []string
 	Classes         []string
 	SRS             *string
-	Datasource      Datasource
+	Datasource      interface{}
 	Type            GeometryType
 	Active          bool
 	GroupBy         string
@@ -25,5 +25,4 @@ type Layer struct {
 	ScaleFactor     float64
 	Maxzoom         uint32
 	Minzoom         uint32
-	Dataset         string
 }

@@ -186,7 +186,7 @@ func (m *Map) WriteFiles(basename string) error {
 // whether a string is a connection (PG:xxx) or filename
 var isOgrConnection = regexp.MustCompile(`^[a-zA-Z]{2,}:`)
 
-func (m *Map) newDatasource(ds cartocss.Datasource, rules []cartocss.Rule) []Parameter {
+func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 	var params []Parameter
 	switch ds := ds.(type) {
 	case cartocss.PostGIS:
@@ -245,6 +245,26 @@ func (m *Map) newDatasource(ds cartocss.Datasource, rules []cartocss.Rule) []Par
 		params = []Parameter{
 			{Name: "file", Value: fname},
 			{Name: "type", Value: "geojson"},
+		}
+	case cartocss.Dataset:
+		params = []Parameter{
+			{Name: "id", Value: ds.Id},
+			{Name: "type", Value: ds.Type},
+			{Name: "name", Value: ds.Name},
+		}
+	case cartocss.DatasetRaster:
+
+		params = []Parameter{
+			{Name: "id", Value: ds.Id},
+			{Name: "name", Value: ds.Name},
+			{Name: "type", Value: ds.Type},
+			{Name: "multi", Value: strconv.FormatBool(ds.Multi)},
+			{Name: "Lox", Value: strconv.FormatFloat(ds.Lox, 'E', -1, 64)},
+			{Name: "Loy", Value: strconv.FormatFloat(ds.Loy, 'E', -1, 64)},
+			{Name: "Hix", Value: strconv.FormatFloat(ds.Hix, 'E', -1, 64)},
+			{Name: "Hiy", Value: strconv.FormatFloat(ds.Hiy, 'E', -1, 64)},
+			{Name: "Tilesize", Value: strconv.FormatInt(int64(ds.Tilesize), 10)},
+			{Name: "TileStride", Value: strconv.FormatInt(int64(ds.TileStride), 10)},
 		}
 	case nil:
 		// datasource might be nil for exports without mml

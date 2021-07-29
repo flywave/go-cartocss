@@ -75,7 +75,6 @@ func newLayer(l auxLayer) (*Layer, error) {
 		GroupBy:         groupBy,
 		ClearLabelCache: clearLabelCache == "on",
 		CacheFeatures:   cacheFeatures == "on",
-		Dataset:         l.Dataset,
 	}
 	maxzoom, ok := l.Properties["maxzoom"].(int)
 	if ok {
@@ -103,7 +102,7 @@ func parseGeometryType(t string) GeometryType {
 	}
 }
 
-func newDatasource(params map[string]interface{}) (Datasource, error) {
+func newDatasource(params map[string]interface{}) (interface{}, error) {
 	d := make(map[string]string, len(params))
 	for k, v := range params {
 		if s, ok := v.(string); ok {

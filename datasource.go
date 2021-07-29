@@ -51,4 +51,42 @@ type GeoJson struct {
 	Filename string
 }
 
-type Datasource interface{}
+const (
+	DATASET        = "dataset"
+	DATASET_RASTER = "dataset_raster"
+)
+
+type Dataset struct {
+	Id   string
+	Name string
+	Type string
+}
+
+func (d *Dataset) GetId() string {
+	return d.Id
+}
+func (d *Dataset) GetType() string {
+	return d.Type
+}
+func (d *Dataset) GetName() string {
+	return d.Name
+}
+
+type DatasetRaster struct {
+	Id         string
+	Name       string
+	Type       string
+	Multi      bool
+	Lox        float64
+	Loy        float64
+	Hix        float64
+	Hiy        float64
+	Tilesize   uint32
+	TileStride uint32
+}
+
+type Datasource interface {
+	GetId() string
+	GetType() string
+	GetName() string
+}
