@@ -83,6 +83,7 @@ type DatasetRaster struct {
 	Hiy        float64
 	Tilesize   uint32
 	TileStride uint32
+	Zoom       uint32
 }
 
 type Datasource interface {
