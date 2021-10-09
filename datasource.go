@@ -73,9 +73,7 @@ func (d *Dataset) GetName() string {
 }
 
 type DatasetRaster struct {
-	Id         string
-	Name       string
-	Type       string
+	Dataset
 	Multi      bool
 	Lox        float64
 	Loy        float64

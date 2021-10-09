@@ -175,9 +175,11 @@ func newDatasource(params map[string]interface{}) (interface{}, error) {
 		tileStride, _ := strconv.ParseUint(d["hiy"], 10, 32)
 
 		return DatasetRaster{
-			Type:       DATASET,
-			Id:         d["id"],
-			Name:       d["name"],
+			Dataset: Dataset{
+				Type: DATASET,
+				Id:   d["id"],
+				Name: d["name"],
+			},
 			Multi:      mt,
 			Lox:        lox,
 			Loy:        loy,
