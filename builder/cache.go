@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	cartocss "github.com/flywave/go-cartocss"
 	"github.com/flywave/go-cartocss/config"
+
+	cartocss "github.com/flywave/go-cartocss"
 )
 
 type MapMaker interface {

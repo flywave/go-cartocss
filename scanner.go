@@ -8,15 +8,12 @@ import (
 	"unicode/utf8"
 )
 
-// tokenType identifies the type of lexical tokens.
 type tokenType int
 
-// String returns a string representation of the token type.
 func (t tokenType) String() string {
 	return tokenNames[t]
 }
 
-// token represents a token and the corresponding string.
 type token struct {
 	t      tokenType
 	value  string
@@ -24,7 +21,6 @@ type token struct {
 	column int
 }
 
-// String returns a string representation of the token.
 func (t *token) String() string {
 	if len(t.value) > 10 {
 		return fmt.Sprintf("%s (line: %d, column: %d): %.10q...",
@@ -34,9 +30,7 @@ func (t *token) String() string {
 		t.t, t.line, t.column, t.value)
 }
 
-// The complete list of tokens in MSS.
 const (
-	// Scanner flags
 	tokenError tokenType = iota
 	tokenEOF
 	// regular tokens

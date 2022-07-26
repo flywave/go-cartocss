@@ -107,9 +107,7 @@ func (z ZoomRange) combine(other ZoomRange) ZoomRange {
 }
 
 func (z ZoomRange) Levels() (n int) {
-	// n accumulates the total bits set in x, counting only set bits
 	for ; z > 0; n++ {
-		// clear the least significant bit set
 		z &= z - 1
 	}
 	return

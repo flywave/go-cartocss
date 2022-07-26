@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/flywave/go-cartocss/color"
+	"github.com/flywave/go-cartocss/config"
 
 	cartocss "github.com/flywave/go-cartocss"
-	"github.com/flywave/go-cartocss/config"
 )
 
 type Builder struct {

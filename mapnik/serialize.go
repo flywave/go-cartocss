@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	cartocss "github.com/flywave/go-cartocss"
+
 	"github.com/flywave/go-cartocss/builder"
 	"github.com/flywave/go-cartocss/color"
 	"github.com/flywave/go-cartocss/config"
@@ -45,10 +46,9 @@ var Maker2 = maker{mapnik2: true}
 var Maker3 = maker{}
 
 func New(locator config.Locator) *Map {
-	srs := "+init=epsg:3857"
 	return &Map{
 		fontSets:    make(map[string]string),
-		XML:         &XMLMap{SRS: &srs},
+		XML:         &XMLMap{SRS: "+init=epsg:3857"},
 		locator:     locator,
 		scaleFactor: 1.0,
 		zoomScales:  webmercZoomScales,
@@ -77,6 +77,8 @@ func (m *Map) AddLayer(l cartocss.Layer, rules []cartocss.Rule) {
 		defer func() { m.scaleFactor = prevScaleFactor }()
 		m.scaleFactor = l.ScaleFactor
 	}
+	styles := m.newStyles(rules)
+	m.XML.Styles = append(m.XML.Styles, styles...)
 
 	layer := Layer{}
 	layer.SRS = l.SRS
@@ -95,44 +97,32 @@ func (m *Map) AddLayer(l cartocss.Layer, rules []cartocss.Rule) {
 		layer.CacheFeatures = "true"
 	}
 
-	if len(rules) > 0 {
-		style := m.newStyles(rules)
-		style.Name = l.ID
-		m.XML.Styles = append(m.XML.Styles, style)
-
-		// z := cartocss.RulesZoom(rules)
-		// if z != cartocss.AllZoom {
-		// 	if l := z.First(); l > 0 {
-		// 		if l > len(m.zoomScales) {
-		// 			l = len(m.zoomScales)
-		// 		}
-		// 		if m.mapnik2 {
-		// 			layer.MaxZoom = m.zoomScales[l-1]
-		// 		} else {
-		// 			layer.MaxScaleDenom = m.zoomScales[l-1]
-		// 		}
-		// 	}
-		// 	if l := z.Last(); l < len(m.zoomScales) {
-		// 		if m.mapnik2 {
-		// 			layer.MinZoom = m.zoomScales[l]
-		// 		} else {
-		// 			layer.MinScaleDenom = m.zoomScales[l]
-		// 		}
-		// 	}
-		// }
-		if m.mapnik2 {
-			layer.MaxZoom = int(l.Maxzoom)
-			layer.MinZoom = int(l.Minzoom)
-		} else {
-			layer.MaxScaleDenom = m.zoomScales[l.Maxzoom]
-			layer.MinScaleDenom = m.zoomScales[l.Minzoom]
+	z := cartocss.RulesZoom(rules)
+	if z != cartocss.AllZoom {
+		if l := z.First(); l > 0 {
+			if l > len(m.zoomScales) {
+				l = len(m.zoomScales)
+			}
+			if m.mapnik2 {
+				layer.MaxZoom = m.zoomScales[l-1]
+			} else {
+				layer.MaxScaleDenom = m.zoomScales[l-1]
+			}
 		}
-
-		params := m.newDatasource(l.Datasource, rules)
-		if params != nil {
-			layer.Datasource = &params
+		if l := z.Last(); l < len(m.zoomScales) {
+			if m.mapnik2 {
+				layer.MinZoom = m.zoomScales[l]
+			} else {
+				layer.MinScaleDenom = m.zoomScales[l]
+			}
 		}
-		layer.StyleNames = append(layer.StyleNames, style.Name)
+	}
+	params := m.newDatasource(l.Datasource, rules)
+	if params != nil {
+		layer.Datasource = &params
+	}
+	for _, s := range styles {
+		layer.StyleNames = append(layer.StyleNames, s.Name)
 	}
 	m.XML.Layers = append(m.XML.Layers, layer)
 }
@@ -183,7 +173,6 @@ func (m *Map) WriteFiles(basename string) error {
 	return m.Write(f)
 }
 
-// whether a string is a connection (PG:xxx) or filename
 var isOgrConnection = regexp.MustCompile(`^[a-zA-Z]{2,}:`)
 
 func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
@@ -266,12 +255,11 @@ func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 			{Name: "TileStride", Value: strconv.FormatInt(int64(ds.TileStride), 10)},
 		}
 	case nil:
-		// datasource might be nil for exports without mml
+		//
 	default:
 		panic(fmt.Sprintf("datasource not supported by Mapnik: %v", ds))
 	}
 
-	// drop empty parameters
 	var result []Parameter
 	for _, p := range params {
 		if p.Value != "" {
@@ -289,25 +277,42 @@ func pqSelectString(query string, rules []cartocss.Rule, autoTypeFilter bool) st
 	return WrapWhere(query, filter)
 }
 
-func (m *Map) newStyles(rules []cartocss.Rule) Style {
+func (m *Map) newStyles(rules []cartocss.Rule) []Style {
+	styles := []Style{}
 	style := Style{FilterMode: "first"}
 
 	for _, r := range rules {
 		mr := m.newRule(r)
-		// apply style-level properties
-		for _, rr := range rules {
-			if r.Attachment == rr.Attachment {
-				if v, ok := r.Properties.GetString("comp-op"); ok {
-					style.CompOp = &v
-				}
-				if v, ok := r.Properties.GetFloat("opacity"); ok {
-					style.Opacity = &v
+
+		styleName := r.Layer
+		if r.Attachment != "" {
+			styleName += "-" + r.Attachment
+		}
+
+		if style.Name != styleName {
+			if len(style.Rules) > 0 {
+				styles = append(styles, style)
+			}
+			style = Style{Name: styleName, FilterMode: "first"}
+
+			for _, rr := range rules {
+				if r.Attachment == rr.Attachment {
+					if v, ok := r.Properties.GetString("comp-op"); ok {
+						style.CompOp = &v
+					}
+					if v, ok := r.Properties.GetFloat("opacity"); ok {
+						style.Opacity = &v
+					}
 				}
 			}
 		}
 		style.Rules = append(style.Rules, *mr)
 	}
-	return style
+	if len(style.Rules) > 0 {
+		styles = append(styles, style)
+	}
+
+	return styles
 }
 
 func (m *Map) newRule(r cartocss.Rule) *Rule {
@@ -367,16 +372,7 @@ func (m *Map) addLineSymbolizer(result *Rule, r cartocss.Rule) {
 		symb := LineSymbolizer{}
 		symb.Width = fmtFloat(width*m.scaleFactor, true)
 		symb.Clip = fmtBool(r.Properties.GetBool("line-clip"))
-		fill, ok := r.Properties.GetColor("line-color")
-		if ok {
-			symb.Color = fmtColor(fill, true)
-		} else {
-			str, ok1 := r.Properties.GetString("line-color")
-			if ok1 {
-				symb.Color = &str
-			}
-			ok = ok1
-		}
+		symb.Color = fmtColor(r.Properties.GetColor("line-color"))
 		if v, ok := r.Properties.GetFloatList("line-dasharray"); ok {
 			symb.Dasharray = fmtPattern(v, m.scaleFactor, true)
 		}
@@ -422,23 +418,10 @@ func (m *Map) addLinePatternSymbolizer(result *Rule, r cartocss.Rule) {
 }
 
 func (m *Map) addPolygonSymbolizer(result *Rule, r cartocss.Rule) {
-	symb := PolygonSymbolizer{}
-	fill, ok1 := r.Properties.GetColor("polygon-fill")
-	if ok1 {
+	if fill, ok := r.Properties.GetColor("polygon-fill"); ok {
+		symb := PolygonSymbolizer{}
 		symb.Color = fmtColor(fill, true)
-	} else {
-		str, ok := r.Properties.GetString("polygon-fill")
-		if ok {
-			symb.Color = &str
-		}
-		ok1 = ok
-	}
-	opc, ok := r.Properties.GetFloat("fill-opacity")
-	if !ok {
-		opc, ok = r.Properties.GetFloat("polygon-opacity")
-	}
-	if ok1 {
-		symb.Opacity = fmtFloat(opc, ok)
+		symb.Opacity = fmtFloat(r.Properties.GetFloat("polygon-opacity"))
 		symb.Gamma = fmtFloat(r.Properties.GetFloat("polygon-gamma"))
 		symb.GammaMethod = fmtString(r.Properties.GetString("polygon-gamma-method"))
 		symb.Clip = fmtBool(r.Properties.GetBool("polygon-clip"))
@@ -447,102 +430,82 @@ func (m *Map) addPolygonSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.Smooth = fmtFloat(r.Properties.GetFloat("polygon-smooth"))
 		symb.GeometryTransform = fmtString(r.Properties.GetString("polygon-geometry-transform"))
 		symb.CompOp = fmtString(r.Properties.GetString("polygon-comp-op"))
+
 		result.Symbolizers = append(result.Symbolizers, &symb)
 	}
 }
 
 func (m *Map) addTextSymbolizer(result *Rule, r cartocss.Rule) {
-	symb := TextSymbolizer{}
 	if size, ok := r.Properties.GetFloat("text-size"); ok {
+		symb := TextSymbolizer{}
 		symb.Size = fmtFloat(size*m.scaleFactor, true)
-	}
-	c, ok := r.Properties.GetColor("text-fill")
-	if ok {
-		symb.Fill = fmtColor(c, ok)
-	} else {
-		str, ok := r.Properties.GetString("text-fill")
-		if ok {
-			symb.Fill = &str
+		symb.Fill = fmtColor(r.Properties.GetColor("text-fill"))
+		symb.Name = fmtField(r.Properties.GetFieldList("text-name"))
+		symb.AvoidEdges = fmtBool(r.Properties.GetBool("text-avoid-edges"))
+		symb.HaloFill = fmtColor(r.Properties.GetColor("text-halo-fill"))
+		symb.HaloRadius = fmtFloatProp(r.Properties, "text-halo-radius", m.scaleFactor)
+		symb.HaloRasterizer = fmtString(r.Properties.GetString("text-halo-rasterizer"))
+		symb.Opacity = fmtFloat(r.Properties.GetFloat("text-opacity"))
+		symb.WrapCharacter = fmtString(r.Properties.GetString("text-wrap-character"))
+		symb.WrapBefore = fmtString(r.Properties.GetString("text-wrap-before"))
+		symb.WrapWidth = fmtFloatProp(r.Properties, "text-wrap-width", m.scaleFactor)
+		symb.Ratio = fmtFloat(r.Properties.GetFloat("text-ratio"))
+		symb.MaxCharAngleDelta = fmtFloat(r.Properties.GetFloat("text-max-char-angle-delta"))
+
+		symb.Placement = fmtString(r.Properties.GetString("text-placement"))
+		symb.PlacementType = fmtString(r.Properties.GetString("text-placement-type"))
+		symb.Placements = fmtString(r.Properties.GetString("text-placements"))
+		symb.LabelPositionTolerance = fmtFloatProp(r.Properties, "text-label-position-tolerance", m.scaleFactor)
+		symb.VerticalAlign = fmtString(r.Properties.GetString("text-vertical-alignment"))
+		symb.HorizontalAlign = fmtString(r.Properties.GetString("text-horizontal-alignment"))
+		symb.JustifyAlign = fmtString(r.Properties.GetString("text-justify-alignment"))
+		symb.CompOp = fmtString(r.Properties.GetString("text-comp-op"))
+
+		symb.Dx = fmtFloatProp(r.Properties, "text-dx", m.scaleFactor)
+		symb.Dy = fmtFloatProp(r.Properties, "text-dy", m.scaleFactor)
+
+		if v, ok := r.Properties.GetFloat("text-orientation"); ok {
+			symb.Orientation = fmtFloat(v, true)
+		} else if v, ok := r.Properties.GetFieldList("text-orientation"); ok {
+			symb.Orientation = fmtField(v, true)
 		}
-	}
-	symb.Name = fmtField(r.Properties.GetFieldList("text-name"))
-	symb.AvoidEdges = fmtBool(r.Properties.GetBool("text-avoid-edges"))
-	c, ok = r.Properties.GetColor("text-halo-fill")
-	if ok {
-		symb.HaloFill = fmtColor(c, ok)
-	} else {
-		str, ok := r.Properties.GetString("text-halo-fill")
-		if ok {
-			symb.HaloFill = &str
+
+		symb.CharacterSpacing = fmtFloatProp(r.Properties, "text-character-spacing", m.scaleFactor)
+		symb.LineSpacing = fmtFloatProp(r.Properties, "text-line-spacing", m.scaleFactor)
+
+		symb.AllowOverlap = fmtBool(r.Properties.GetBool("text-allow-overlap"))
+
+		symb.Spacing = fmtFloatProp(r.Properties, "text-spacing", m.scaleFactor)
+		symb.MinimumDistance = fmtFloatProp(r.Properties, "text-min-distance", m.scaleFactor)
+		symb.MinimumPadding = fmtFloatProp(r.Properties, "text-min-padding", m.scaleFactor)
+		symb.MinPathLength = fmtFloatProp(r.Properties, "text-min-path-length", m.scaleFactor)
+
+		symb.Clip = fmtBool(r.Properties.GetBool("text-clip"))
+		symb.TextTransform = fmtString(r.Properties.GetString("text-transform"))
+
+		if faceNames, ok := r.Properties.GetStringList("text-face-name"); ok {
+			symb.FontsetName = m.fontSetName(faceNames)
 		}
-	}
-	symb.HaloRadius = fmtFloatProp(r.Properties, "text-halo-radius", m.scaleFactor)
-	symb.HaloRasterizer = fmtString(r.Properties.GetString("text-halo-rasterizer"))
-	symb.Opacity = fmtFloat(r.Properties.GetFloat("text-opacity"))
-	symb.WrapCharacter = fmtString(r.Properties.GetString("text-wrap-character"))
-	symb.WrapBefore = fmtString(r.Properties.GetString("text-wrap-before"))
-	symb.WrapWidth = fmtFloatProp(r.Properties, "text-wrap-width", m.scaleFactor)
-	symb.Ratio = fmtFloat(r.Properties.GetFloat("text-ratio"))
-	symb.MaxCharAngleDelta = fmtFloat(r.Properties.GetFloat("text-max-char-angle-delta"))
 
-	symb.Placement = fmtString(r.Properties.GetString("text-placement"))
-	symb.PlacementType = fmtString(r.Properties.GetString("text-placement-type"))
-	symb.Placements = fmtString(r.Properties.GetString("text-placements"))
-	symb.LabelPositionTolerance = fmtFloatProp(r.Properties, "text-label-position-tolerance", m.scaleFactor)
-	symb.VerticalAlign = fmtString(r.Properties.GetString("text-vertical-alignment"))
-	symb.HorizontalAlign = fmtString(r.Properties.GetString("text-horizontal-alignment"))
-	symb.JustifyAlign = fmtString(r.Properties.GetString("text-justify-alignment"))
-	symb.CompOp = fmtString(r.Properties.GetString("text-comp-op"))
+		if !m.mapnik2 {
+			symb.HaloOpacity = fmtFloat(r.Properties.GetFloat("text-halo-opacity"))
+			symb.HaloTransform = fmtString(r.Properties.GetString("text-halo-transform"))
+			symb.HaloCompOp = fmtString(r.Properties.GetString("text-halo-comp-op"))
+			symb.RepeatWrapCharacter = fmtBool(r.Properties.GetBool("text-repeat-wrap-characater"))
+			symb.Margin = fmtFloatProp(r.Properties, "text-margin", m.scaleFactor)
+			symb.Simplify = fmtFloat(r.Properties.GetFloat("text-simplify"))
+			symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("text-simplify-algorithm"))
+			symb.Smooth = fmtFloat(r.Properties.GetFloat("text-smooth"))
+			symb.RotateDisplacement = fmtBool(r.Properties.GetBool("text-rotate-displacement"))
+			symb.Upright = fmtString(r.Properties.GetString("text-upgright"))
+			symb.FontFeatureSettings = fmtString(r.Properties.GetString("font-feature-settings"))
+			symb.LargestBboxOnly = fmtBool(r.Properties.GetBool("text-largest-bbox-only"))
+			symb.RepeatDistance = fmtFloatProp(r.Properties, "text-repeat-distance", m.scaleFactor)
+		}
 
-	symb.Dx = fmtFloatProp(r.Properties, "text-dx", m.scaleFactor)
-	symb.Dy = fmtFloatProp(r.Properties, "text-dy", m.scaleFactor)
-
-	if v, ok := r.Properties.GetFloat("text-orientation"); ok {
-		symb.Orientation = fmtFloat(v, true)
-	} else if v, ok := r.Properties.GetFieldList("text-orientation"); ok {
-		symb.Orientation = fmtField(v, true)
-	}
-
-	symb.CharacterSpacing = fmtFloatProp(r.Properties, "text-character-spacing", m.scaleFactor)
-	symb.LineSpacing = fmtFloatProp(r.Properties, "text-line-spacing", m.scaleFactor)
-
-	symb.AllowOverlap = fmtBool(r.Properties.GetBool("text-allow-overlap"))
-
-	// TODO see for issue/upcoming fixes with 3.0 https://github.com/mapnik/mapnik/issues/2362
-
-	// spacing between repeated labels
-	symb.Spacing = fmtFloatProp(r.Properties, "text-spacing", m.scaleFactor)
-	// min-distance to other label, does not work with placement-line
-	symb.MinimumDistance = fmtFloatProp(r.Properties, "text-min-distance", m.scaleFactor)
-	// min-padding to map edge
-	symb.MinimumPadding = fmtFloatProp(r.Properties, "text-min-padding", m.scaleFactor)
-	symb.MinPathLength = fmtFloatProp(r.Properties, "text-min-path-length", m.scaleFactor)
-
-	symb.Clip = fmtBool(r.Properties.GetBool("text-clip"))
-	symb.TextTransform = fmtString(r.Properties.GetString("text-transform"))
-
-	if faceNames, ok := r.Properties.GetStringList("text-face-name"); ok {
-		symb.FontsetName = m.fontSetName(faceNames)
-	}
-
-	if !m.mapnik2 {
-		symb.HaloOpacity = fmtFloat(r.Properties.GetFloat("text-halo-opacity"))
-		symb.HaloTransform = fmtString(r.Properties.GetString("text-halo-transform"))
-		symb.HaloCompOp = fmtString(r.Properties.GetString("text-halo-comp-op"))
-		symb.RepeatWrapCharacter = fmtBool(r.Properties.GetBool("text-repeat-wrap-characater"))
-		symb.Margin = fmtFloatProp(r.Properties, "text-margin", m.scaleFactor)
-		symb.Simplify = fmtFloat(r.Properties.GetFloat("text-simplify"))
-		symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("text-simplify-algorithm"))
-		symb.Smooth = fmtFloat(r.Properties.GetFloat("text-smooth"))
-		symb.RotateDisplacement = fmtBool(r.Properties.GetBool("text-rotate-displacement"))
-		symb.Upright = fmtString(r.Properties.GetString("text-upgright"))
-		symb.FontFeatureSettings = fmtString(r.Properties.GetString("font-feature-settings"))
-		symb.LargestBboxOnly = fmtBool(r.Properties.GetBool("text-largest-bbox-only"))
-		symb.RepeatDistance = fmtFloatProp(r.Properties, "text-repeat-distance", m.scaleFactor)
-	}
-
-	if symb.Name != nil && *symb.Name != "" {
-		result.Symbolizers = append(result.Symbolizers, &symb)
+		if symb.Name != nil && *symb.Name != "" {
+			result.Symbolizers = append(result.Symbolizers, &symb)
+		}
 	}
 }
 
@@ -554,17 +517,7 @@ func (m *Map) addShieldSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.File = &fname
 
 		symb.Size = fmtFloatProp(r.Properties, "shield-size", m.scaleFactor)
-
-		c, ok := r.Properties.GetColor("shield-fill")
-		if ok {
-			symb.Fill = fmtColor(c, ok)
-		} else {
-			str, ok := r.Properties.GetString("shield-fill")
-			if ok {
-				symb.Fill = &str
-			}
-		}
-
+		symb.Fill = fmtColor(r.Properties.GetColor("shield-fill"))
 		symb.Name = fmtField(r.Properties.GetFieldList("shield-name"))
 		symb.TextOpacity = fmtFloat(r.Properties.GetFloat("shield-text-opacity"))
 		symb.Opacity = fmtFloat(r.Properties.GetFloat("shield-opacity"))
@@ -583,15 +536,7 @@ func (m *Map) addShieldSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.AllowOverlap = fmtBool(r.Properties.GetBool("shield-allow-overlap"))
 		symb.AvoidEdges = fmtBool(r.Properties.GetBool("shield-avoid-edges"))
 
-		c, ok = r.Properties.GetColor("shield-halo-fill")
-		if ok {
-			symb.HaloFill = fmtColor(c, ok)
-		} else {
-			str, ok := r.Properties.GetString("shield-halo-fill")
-			if ok {
-				symb.HaloFill = &str
-			}
-		}
+		symb.HaloFill = fmtColor(r.Properties.GetColor("shield-halo-fill"))
 		symb.HaloRadius = fmtFloatProp(r.Properties, "shield-halo-radius", m.scaleFactor)
 		symb.HaloRasterizer = fmtString(r.Properties.GetString("shield-halo-rasterizer"))
 
@@ -634,30 +579,14 @@ func (m *Map) addMarkerSymbolizer(result *Rule, r cartocss.Rule) {
 	symb := MarkersSymbolizer{}
 	symb.Width = fmtFloatProp(r.Properties, "marker-width", m.scaleFactor)
 	symb.Height = fmtFloatProp(r.Properties, "marker-height", m.scaleFactor)
-	c, ok := r.Properties.GetColor("marker-fill")
-	if ok {
-		symb.Fill = fmtColor(c, ok)
-	} else {
-		str, ok := r.Properties.GetString("marker-fill")
-		if ok {
-			symb.Fill = &str
-		}
-	}
+	symb.Fill = fmtColor(r.Properties.GetColor("marker-fill"))
 	symb.FillOpacity = fmtFloat(r.Properties.GetFloat("marker-fill-opacity"))
 	symb.Opacity = fmtFloat(r.Properties.GetFloat("marker-opacity"))
 	symb.Placement = fmtString(r.Properties.GetString("marker-placement"))
 	symb.Transform = fmtString(r.Properties.GetString("marker-transform"))
 	symb.GeometryTransform = fmtString(r.Properties.GetString("marker-geometry-transform"))
 	symb.Spacing = fmtFloatProp(r.Properties, "marker-spacing", m.scaleFactor)
-	c, ok = r.Properties.GetColor("marker-line-fill")
-	if ok {
-		symb.Stroke = fmtColor(c, ok)
-	} else {
-		str, ok := r.Properties.GetString("marker-line-fill")
-		if ok {
-			symb.Stroke = &str
-		}
-	}
+	symb.Stroke = fmtColor(r.Properties.GetColor("marker-line-color"))
 	symb.StrokeOpacity = fmtFloat(r.Properties.GetFloat("marker-line-opacity"))
 	symb.StrokeWidth = fmtFloatProp(r.Properties, "marker-line-width", m.scaleFactor)
 	symb.AllowOverlap = fmtBool(r.Properties.GetBool("marker-allow-overlap"))
@@ -673,11 +602,9 @@ func (m *Map) addMarkerSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.File = &fname
 
 	} else {
-		// carto uses 'ellipse' as default for "marker-type"
 		markerType, ok := r.Properties.GetString("marker-type")
 		if !ok {
 			markerType = "ellipse"
-			// default marker type requires at least fill, stroke or strokewidth
 			if symb.Fill == nil && symb.Stroke == nil && symb.StrokeWidth == nil {
 				return
 			}
@@ -730,18 +657,9 @@ func (m *Map) addPolygonPatternSymbolizer(result *Rule, r cartocss.Rule) {
 }
 
 func (m *Map) addBuildingSymbolizer(result *Rule, r cartocss.Rule) {
-	symb := BuildingSymbolizer{}
-	c, ok := r.Properties.GetColor("building-fill")
-	if ok {
-		symb.Fill = fmtColor(c, true)
-	} else {
-		str, ok1 := r.Properties.GetString("building-fill")
-		if ok1 {
-			symb.Fill = &str
-		}
-		ok = ok1
-	}
-	if ok {
+	if fill, ok := r.Properties.GetColor("building-fill"); ok {
+		symb := BuildingSymbolizer{}
+		symb.Fill = fmtColor(fill, true)
 		symb.FillOpacity = fmtFloat(r.Properties.GetFloat("building-fill-opacity"))
 		symb.Height = fmtFloatProp(r.Properties, "building-height", m.scaleFactor)
 		result.Symbolizers = append(result.Symbolizers, &symb)
@@ -750,18 +668,9 @@ func (m *Map) addBuildingSymbolizer(result *Rule, r cartocss.Rule) {
 
 func (m *Map) addDotSymbolizer(result *Rule, r cartocss.Rule) {
 	if !m.mapnik2 {
-		symb := DotSymbolizer{}
-		c, ok := r.Properties.GetColor("dot-fill")
-		if ok {
-			symb.Fill = fmtColor(c, true)
-		} else {
-			str, ok1 := r.Properties.GetString("dot-fill")
-			if ok1 {
-				symb.Fill = &str
-			}
-			ok = ok1
-		}
-		if ok {
+		if fill, ok := r.Properties.GetColor("dot-fill"); ok {
+			symb := DotSymbolizer{}
+			symb.Fill = fmtColor(fill, true)
 			symb.Opacity = fmtFloat(r.Properties.GetFloat("dot-opacity"))
 			symb.Width = fmtFloatProp(r.Properties, "dot-width", m.scaleFactor)
 			symb.Height = fmtFloatProp(r.Properties, "dot-height", m.scaleFactor)
@@ -794,15 +703,7 @@ func (m *Map) addRasterSymbolizer(result *Rule, r cartocss.Rule) {
 	symb.CompOp = fmtString(r.Properties.GetString("raster-comp-op"))
 	symb.Scaling = fmtString(r.Properties.GetString("raster-scaling"))
 	symb.DefaultMode = fmtString(r.Properties.GetString("raster-colorizer-default-mode"))
-	c, ok := r.Properties.GetColor("raster-colorizer-default-color")
-	if ok {
-		symb.DefaultColor = fmtColor(c, true)
-	} else {
-		str, ok1 := r.Properties.GetString("raster-colorizer-default-color")
-		if ok1 {
-			symb.DefaultColor = &str
-		}
-	}
+	symb.DefaultColor = fmtColor(r.Properties.GetColor("raster-colorizer-default-color"))
 	result.Symbolizers = append(result.Symbolizers, &symb)
 }
 
@@ -905,7 +806,6 @@ func fmtFilters(filters []cartocss.Filter) string {
 		case nil:
 			value = "null"
 		case string:
-			// TODO quote " in string?!
 			value = `'` + v + `'`
 		case float64:
 			value = string(*fmtFloat(v, true))
@@ -915,7 +815,6 @@ func fmtFilters(filters []cartocss.Filter) string {
 		}
 		field := f.Field
 		if len(field) > 2 && field[0] == '"' && field[len(field)-1] == '"' {
-			// strip quotes from field name
 			field = field[1 : len(field)-1]
 		}
 		if f.CompOp != cartocss.REGEX {
