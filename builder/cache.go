@@ -70,7 +70,7 @@ func (s *style) isStale() (bool, error) {
 	return false, nil
 }
 
-const stylePrefix = "magnacarto-style-"
+const stylePrefix = "carto-style-"
 
 type Cache struct {
 	mu         sync.Mutex
@@ -217,12 +217,12 @@ func (c *Cache) build(style *style) error {
 	var styleFile string
 	if c.destDir != "" {
 		hash := styleHash(style.mapMaker.Type(), style.mml, style.mss)
-		styleFile = filepath.Join(c.destDir, fmt.Sprintf("magnacarto-style-%d%s", hash, style.mapMaker.FileSuffix()))
+		styleFile = filepath.Join(c.destDir, fmt.Sprintf("carto-style-%d%s", hash, style.mapMaker.FileSuffix()))
 		if err := m.WriteFiles(styleFile); err != nil {
 			return err
 		}
 	} else {
-		tmp, err := ioutil.TempDir("", "magnacarto-style")
+		tmp, err := ioutil.TempDir("", "carto-style")
 		if err != nil {
 			return err
 		}

@@ -102,7 +102,7 @@ func (p *Properties) updateMissing(o *Properties) {
 func (p *Properties) keys() []key {
 	keys := make([]key, len(p.values))
 	i := 0
-	for k, _ := range p.values {
+	for k := range p.values {
 		keys[i] = k
 		i += 1
 	}
