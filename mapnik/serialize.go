@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	cartocss "github.com/flywave/go-cartocss"
+
 	"github.com/flywave/go-cartocss/builder"
 	"github.com/flywave/go-cartocss/color"
 	"github.com/flywave/go-cartocss/config"
@@ -678,11 +679,11 @@ func fmtField(vals []interface{}, ok bool) *string {
 	}
 	parts := []string{}
 	for _, v := range vals {
-		switch v.(type) {
+		switch v := v.(type) {
 		case cartocss.Field:
-			parts = append(parts, string(v.(cartocss.Field)))
+			parts = append(parts, string(v))
 		case string:
-			parts = append(parts, "'"+v.(string)+"'")
+			parts = append(parts, "'"+v+"'")
 		}
 	}
 	r := strings.Join(parts, " + ")

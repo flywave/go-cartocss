@@ -42,7 +42,7 @@ func FilterString(rules []cartocss.Rule) string {
 
 	for key, values := range items {
 		vals = vals[:0]
-		for v, _ := range values {
+		for v := range values {
 			vals = append(vals, "'"+v+"'")
 		}
 		parts = append(parts, "\""+key+"\" IN ("+strings.Join(vals, ", ")+")")
