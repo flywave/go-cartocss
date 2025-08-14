@@ -520,14 +520,13 @@ func (d *Decoder) exprPart() {
 
 	for {
 		tok := d.next()
-		switch tok.t {
-		case tokenPlus:
+		if tok.t == tokenPlus {
 			d.mulExpr()
 			d.expr.addOperator(typeAdd)
-		case tokenMinus:
+		} else if tok.t == tokenMinus {
 			d.mulExpr()
 			d.expr.addOperator(typeSubtract)
-		default:
+		} else {
 			d.backup()
 			break
 		}
@@ -539,20 +538,18 @@ func (d *Decoder) mulExpr() {
 
 	for {
 		tok := d.next()
-		switch tok.t {
-		case tokenMultiply:
+		if tok.t == tokenMultiply {
 			d.negOrValue()
 			d.expr.addOperator(typeMultiply)
-		case tokenDivide:
+		} else if tok.t == tokenDivide {
 			d.negOrValue()
 			d.expr.addOperator(typeDivide)
-		default:
+		} else {
 			d.backup()
 			break
 		}
 	}
 }
-
 func (d *Decoder) negOrValue() {
 	tok := d.next()
 	if tok.t == tokenMinus {
