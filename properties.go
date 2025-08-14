@@ -2,13 +2,12 @@ package cartocss
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
 
 	"github.com/flywave/go-cartocss/color"
-
-	"fmt"
 )
 
 type attr struct {
@@ -22,6 +21,8 @@ type key struct {
 	instance string
 }
 
+// Properties is a map of all defined attributes for a rule.
+// Use prop.GetXxx() to get typed properties.
 type Properties struct {
 	values          map[key]attr
 	defaultInstance string
@@ -66,7 +67,7 @@ func (p *Properties) set(property string, val Value) {
 	p.values[key{name: property}] = attr{value: val}
 }
 
-func (p *Properties) setKey(property key, val Value) {
+func (p *Properties) SetKey(property key, val Value) {
 	if p.values == nil {
 		p.values = make(map[key]attr)
 	}
@@ -115,7 +116,7 @@ func (p *Properties) clone() *Properties {
 	return &result
 }
 
-func (p *Properties) minPos() int {
+func (p *Properties) MinPos() int {
 	index := math.MaxInt32
 	for _, v := range p.values {
 		if v.specificity.index < index {
@@ -157,6 +158,8 @@ func (p byIndex) Less(i, j int) bool {
 		return p[i].index < p[j].index
 	}
 
+	// prefer longer/more-specific prefix
+	// eg. polygon-pattern- before polygon-
 	return len(p[i].prefix) > len(p[j].prefix)
 }
 
@@ -165,7 +168,21 @@ type Prefix struct {
 	Instance string
 }
 
+// SortedPrefixes returns a slice of all propertry prefixes, sorted by their first occurence.
 func SortedPrefixes(p *Properties, prefixes []string) []Prefix {
+	/*
+	   With properties for:
+	   {
+	   	line-width: 2;
+	   	top/line-width: 1;
+	   	polygon-fill: red;
+	   }
+
+	   SortedPrefixes(p, []string{"line-", "polygon-"})
+	   will return
+	   []Prefix{{"line-", ""}, {"line-", "top"}, {"polygon-", ""}}
+
+	*/
 	pp := make([]prefixPos, 0, len(prefixes))
 	for _, prefix := range prefixes {
 		pos := p.minPrefixPos(prefix)
@@ -180,16 +197,7 @@ func SortedPrefixes(p *Properties, prefixes []string) []Prefix {
 	return result
 }
 
-func (p *Properties) GetKV() ([]string, []Value) {
-	ks := []string{}
-	vs := []Value{}
-	for k, v := range p.values {
-		ks = append(ks, k.name)
-		vs = append(vs, v.value)
-	}
-	return ks, vs
-}
-
+// SetDefaultInstance sets the instance name used for all following GetXXX calls.
 func (p *Properties) SetDefaultInstance(instance string) {
 	p.defaultInstance = instance
 }
@@ -249,12 +257,13 @@ func (p *Properties) GetFloatList(property string) ([]float64, bool) {
 	return nums, true
 }
 
+// GetStringList returns property as a list of strings, single string is converted to a slice.
 func (p *Properties) GetStringList(property string) ([]string, bool) {
 	v, ok := p.get(property)
 	if !ok {
 		return nil, false
 	}
-	if s, ok := v.(string); ok {
+	if s, cok := v.(string); cok {
 		return []string{s}, true
 	}
 	l, ok := v.([]Value)
@@ -276,7 +285,7 @@ func (p *Properties) GetFieldList(property string) ([]interface{}, bool) {
 	if !ok {
 		return nil, false
 	}
-	if s, ok := v.(string); ok {
+	if s, cok := v.(string); cok {
 		return []interface{}{Field(s)}, true
 	}
 	l, ok := v.([]Value)
@@ -290,6 +299,7 @@ func (p *Properties) GetFieldList(property string) ([]interface{}, bool) {
 	return vals, true
 }
 
+// GetStopList returns property as a list of Stops.
 func (p *Properties) GetStopList(property string) ([]Stop, bool) {
 	v, ok := p.get(property)
 	if !ok {
@@ -309,6 +319,8 @@ func (p *Properties) GetStopList(property string) ([]Stop, bool) {
 	return stops, true
 }
 
+// combineProperties returns new properties all values from a and b. uses more specific value
+// for duplicate keys.
 func combineProperties(a, b *Properties) *Properties {
 	r := &Properties{values: make(map[key]attr)}
 	for k, v := range a.values {
@@ -326,6 +338,7 @@ func NewProperties(kv ...interface{}) *Properties {
 	for i := 0; i < (len(kv) - 1); i += 2 {
 		k := kv[i].(string)
 		v := kv[i+1]
+		// just count position upwards to get ordering as defines in tests
 		r.values[key{name: k}] = attr{value: v, specificity: specificity{index: propCounter}}
 		propCounter += 1
 	}
@@ -339,6 +352,7 @@ func NewPropertiesInstance(kiv ...interface{}) *Properties {
 		k := kiv[i].(string)
 		instance := kiv[i+1].(string)
 		v := kiv[i+2]
+		// just count position upwards to get ordering as defines in tests
 		r.values[key{name: k, instance: instance}] = attr{value: v, specificity: specificity{index: propCounter}}
 		propCounter += 1
 	}

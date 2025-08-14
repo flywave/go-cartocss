@@ -29,6 +29,7 @@ const (
 	EQ
 	NEQ
 	REGEX
+	MODULO
 )
 
 func (c CompOp) String() string {
@@ -47,6 +48,8 @@ func (c CompOp) String() string {
 		return "!="
 	case REGEX:
 		return "=~"
+	case MODULO:
+		return "%"
 	default:
 		return "?"
 	}
@@ -68,6 +71,8 @@ func parseCompOp(comp string) (CompOp, error) {
 		return LT, nil
 	case "!=":
 		return NEQ, nil
+	case "%":
+		return MODULO, nil
 	default:
 		return UnknownOp, fmt.Errorf("unknown comparsion '%s'", comp)
 	}
@@ -78,7 +83,7 @@ var InvalidZoom = ZoomRange(0)
 
 type ZoomRange int32
 
-func (z ZoomRange) validFor(level int) bool {
+func (z ZoomRange) ValidFor(level int) bool {
 	return z>>uint8(level)&1 > 0
 }
 
@@ -107,7 +112,9 @@ func (z ZoomRange) combine(other ZoomRange) ZoomRange {
 }
 
 func (z ZoomRange) Levels() (n int) {
+	// n accumulates the total bits set in x, counting only set bits
 	for ; z > 0; n++ {
+		// clear the least significant bit set
 		z &= z - 1
 	}
 	return
@@ -123,7 +130,7 @@ func (z ZoomRange) String() string {
 	}
 	zooms := []string{}
 	for i := 0; i < 31; i++ {
-		if z.validFor(i) {
+		if z.ValidFor(i) {
 			zooms = append(zooms, strconv.FormatInt(int64(i), 10))
 		}
 	}

@@ -1,7 +1,6 @@
 package mapnik
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"strings"
 
 	cartocss "github.com/flywave/go-cartocss"
-
 	"github.com/flywave/go-cartocss/builder"
 	"github.com/flywave/go-cartocss/color"
 	"github.com/flywave/go-cartocss/config"
@@ -24,31 +22,29 @@ type Map struct {
 	locator        config.Locator
 	scaleFactor    float64
 	autoTypeFilter bool
-	mapnik2        bool
 	zoomScales     []int
+	proj4          bool
 }
 
 type maker struct {
-	mapnik2 bool
+	proj4 bool
 }
 
 func (m maker) Type() string       { return "mapnik" }
 func (m maker) FileSuffix() string { return ".xml" }
 func (m maker) New(locator config.Locator) builder.MapWriter {
 	mm := New(locator)
-	if m.mapnik2 {
-		mm.SetMapnik2(true)
-	}
+	mm.SetProj4(m.proj4)
 	return mm
 }
 
-var Maker2 = maker{mapnik2: true}
 var Maker3 = maker{}
+var Maker3Proj4 = maker{proj4: true}
 
 func New(locator config.Locator) *Map {
 	return &Map{
 		fontSets:    make(map[string]string),
-		XML:         &XMLMap{SRS: "+init=epsg:3857"},
+		XML:         &XMLMap{SRS: "epsg:3857"},
 		locator:     locator,
 		scaleFactor: 1.0,
 		zoomScales:  webmercZoomScales,
@@ -63,12 +59,18 @@ func (m *Map) SetBackgroundColor(c color.Color) {
 	m.XML.BgColor = fmtColor(c, true)
 }
 
-func (m *Map) SetMapnik2(enable bool) {
-	m.mapnik2 = enable
-}
-
 func (m *Map) SetZoomScales(zoomScales []int) {
 	m.zoomScales = zoomScales
+}
+
+// SetProj4 sets the base SRS to Proj4 compatible +init-style if enabled.
+func (m *Map) SetProj4(enable bool) {
+	if enable {
+		m.XML.SRS = "+init=epsg:3857"
+		m.proj4 = true
+	} else {
+		m.XML.SRS = "epsg:3857"
+	}
 }
 
 func (m *Map) AddLayer(l cartocss.Layer, rules []cartocss.Rule) {
@@ -81,7 +83,11 @@ func (m *Map) AddLayer(l cartocss.Layer, rules []cartocss.Rule) {
 	m.XML.Styles = append(m.XML.Styles, styles...)
 
 	layer := Layer{}
-	layer.SRS = l.SRS
+	layer.SRS = &l.SRS
+	if m.proj4 && strings.HasPrefix(strings.ToLower(*layer.SRS), "epsg:") {
+		srs := "+init=" + *layer.SRS
+		layer.SRS = &srs
+	}
 	layer.Name = l.ID
 	if !l.Active {
 		layer.Status = "off"
@@ -103,18 +109,10 @@ func (m *Map) AddLayer(l cartocss.Layer, rules []cartocss.Rule) {
 			if l > len(m.zoomScales) {
 				l = len(m.zoomScales)
 			}
-			if m.mapnik2 {
-				layer.MaxZoom = m.zoomScales[l-1]
-			} else {
-				layer.MaxScaleDenom = m.zoomScales[l-1]
-			}
+			layer.MaxScaleDenom = m.zoomScales[l-1]
 		}
 		if l := z.Last(); l < len(m.zoomScales) {
-			if m.mapnik2 {
-				layer.MinZoom = m.zoomScales[l]
-			} else {
-				layer.MinScaleDenom = m.zoomScales[l]
-			}
+			layer.MinScaleDenom = m.zoomScales[l]
 		}
 	}
 	params := m.newDatasource(l.Datasource, rules)
@@ -125,36 +123,6 @@ func (m *Map) AddLayer(l cartocss.Layer, rules []cartocss.Rule) {
 		layer.StyleNames = append(layer.StyleNames, s.Name)
 	}
 	m.XML.Layers = append(m.XML.Layers, layer)
-}
-
-func (m *Map) AddParameter(mml *cartocss.MML) {
-	if mml.SRS != nil {
-		m.XML.SRS = mml.SRS
-	}
-
-	if len(mml.BBOX) == 4 {
-		m.XML.Parameters = append(m.XML.Parameters, Parameter{Name: "bounds", Value: fmt.Sprintf("%f,%f,%f,%f", mml.BBOX[0], mml.BBOX[1], mml.BBOX[2], mml.BBOX[3])})
-	}
-
-	m.XML.Parameters = append(m.XML.Parameters, Parameter{Name: "center", Value: fmt.Sprintf("%f,%f,%f", mml.Center[0], mml.Center[1], mml.Center[2])})
-
-	if mml.Scale != 0 {
-		m.XML.Parameters = append(m.XML.Parameters, Parameter{Name: "scale", Value: fmt.Sprintf("%d", mml.Scale)})
-	}
-
-	if mml.Minzoom != 0 {
-		m.XML.Parameters = append(m.XML.Parameters, Parameter{Name: "minzoom", Value: fmt.Sprintf("%d", mml.Minzoom)})
-	}
-
-	if mml.Maxzoom != 0 {
-		m.XML.Parameters = append(m.XML.Parameters, Parameter{Name: "maxzoom", Value: fmt.Sprintf("%d", mml.Maxzoom)})
-	}
-
-	str := "false"
-	if mml.Interactivity {
-		str = "true"
-	}
-	m.XML.Parameters = append(m.XML.Parameters, Parameter{Name: "interactivity", Value: str})
 }
 
 func (m *Map) Write(w io.Writer) error {
@@ -173,13 +141,13 @@ func (m *Map) WriteFiles(basename string) error {
 	return m.Write(f)
 }
 
+// whether a string is a connection (PG:xxx) or filename
 var isOgrConnection = regexp.MustCompile(`^[a-zA-Z]{2,}:`)
 
-func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
+func (m *Map) newDatasource(ds cartocss.Datasource, rules []cartocss.Rule) []Parameter {
 	var params []Parameter
 	switch ds := ds.(type) {
-	case cartocss.PostGIS:
-		ds = m.locator.PostGIS(ds)
+	case *cartocss.PostGIS:
 		params = []Parameter{
 			{Name: "host", Value: ds.Host},
 			{Name: "port", Value: ds.Port},
@@ -192,13 +160,16 @@ func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 			{Name: "srid", Value: ds.SRID},
 			{Name: "type", Value: "postgis"},
 		}
-	case cartocss.Shapefile:
+		if ds.SimplifyGeometries == "true" {
+			params = append(params, Parameter{Name: "simplify_geometries", Value: "true"})
+		}
+	case *cartocss.Shapefile:
 		fname := m.locator.Shape(ds.Filename)
 		params = []Parameter{
 			{Name: "file", Value: fname},
 			{Name: "type", Value: "shape"},
 		}
-	case cartocss.SQLite:
+	case *cartocss.SQLite:
 		fname := m.locator.SQLite(ds.Filename)
 		params = []Parameter{
 			{Name: "file", Value: fname},
@@ -208,7 +179,7 @@ func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 			{Name: "table", Value: ds.Query},
 			{Name: "type", Value: "sqlite"},
 		}
-	case cartocss.OGR:
+	case *cartocss.OGR:
 		file := ds.Filename
 		if !isOgrConnection.MatchString(ds.Filename) {
 			file = m.locator.Data(ds.Filename)
@@ -221,7 +192,7 @@ func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 			{Name: "layer_by_sql", Value: ds.Query},
 			{Name: "type", Value: "ogr"},
 		}
-	case cartocss.GDAL:
+	case *cartocss.GDAL:
 		params = []Parameter{
 			{Name: "file", Value: m.locator.Data(ds.Filename)},
 			{Name: "srid", Value: ds.SRID},
@@ -229,37 +200,19 @@ func (m *Map) newDatasource(ds interface{}, rules []cartocss.Rule) []Parameter {
 			{Name: "band", Value: ds.Band},
 			{Name: "type", Value: "gdal"},
 		}
-	case cartocss.GeoJson:
+	case *cartocss.GeoJson:
 		fname := m.locator.Shape(ds.Filename)
 		params = []Parameter{
 			{Name: "file", Value: fname},
 			{Name: "type", Value: "geojson"},
 		}
-	case cartocss.Dataset:
-		params = []Parameter{
-			{Name: "id", Value: ds.Id},
-			{Name: "type", Value: ds.Type},
-			{Name: "name", Value: ds.Name},
-		}
-	case cartocss.DatasetRaster:
-		params = []Parameter{
-			{Name: "id", Value: ds.Id},
-			{Name: "name", Value: ds.Name},
-			{Name: "type", Value: ds.Type},
-			{Name: "multi", Value: strconv.FormatBool(ds.Multi)},
-			{Name: "Lox", Value: strconv.FormatFloat(ds.Lox, 'E', -1, 64)},
-			{Name: "Loy", Value: strconv.FormatFloat(ds.Loy, 'E', -1, 64)},
-			{Name: "Hix", Value: strconv.FormatFloat(ds.Hix, 'E', -1, 64)},
-			{Name: "Hiy", Value: strconv.FormatFloat(ds.Hiy, 'E', -1, 64)},
-			{Name: "Tilesize", Value: strconv.FormatInt(int64(ds.Tilesize), 10)},
-			{Name: "TileStride", Value: strconv.FormatInt(int64(ds.TileStride), 10)},
-		}
 	case nil:
-		//
+		// datasource might be nil for exports without mml
 	default:
 		panic(fmt.Sprintf("datasource not supported by Mapnik: %v", ds))
 	}
 
+	// drop empty parameters
 	var result []Parameter
 	for _, p := range params {
 		if p.Value != "" {
@@ -294,7 +247,7 @@ func (m *Map) newStyles(rules []cartocss.Rule) []Style {
 				styles = append(styles, style)
 			}
 			style = Style{Name: styleName, FilterMode: "first"}
-
+			// apply style-level properties
 			for _, rr := range rules {
 				if r.Attachment == rr.Attachment {
 					if v, ok := r.Properties.GetString("comp-op"); ok {
@@ -332,7 +285,7 @@ func (m *Map) newRule(r cartocss.Rule) *Rule {
 	}
 
 	result.Filter = fmtFilters(r.Filters)
-	prefixes := cartocss.SortedPrefixes(r.Properties, []string{"line-", "polygon-", "fill-", "polygon-pattern-", "text-", "shield-", "marker-", "point-", "building-", "raster-"})
+	prefixes := cartocss.SortedPrefixes(r.Properties, []string{"line-", "polygon-", "polygon-pattern-", "text-", "shield-", "marker-", "point-", "building-", "raster-"})
 
 	for _, p := range prefixes {
 		r.Properties.SetDefaultInstance(p.Instance)
@@ -341,7 +294,7 @@ func (m *Map) newRule(r cartocss.Rule) *Rule {
 			m.addLineSymbolizer(result, r)
 		case "line-pattern-":
 			m.addLinePatternSymbolizer(result, r)
-		case "polygon-", "fill-":
+		case "polygon-":
 			m.addPolygonSymbolizer(result, r)
 		case "polygon-pattern-":
 			m.addPolygonPatternSymbolizer(result, r)
@@ -408,10 +361,7 @@ func (m *Map) addLinePatternSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.Smooth = fmtFloat(r.Properties.GetFloat("line-pattern-smooth"))
 		symb.GeometryTransform = fmtString(r.Properties.GetString("line-pattern-geometry-transform"))
 		symb.CompOp = fmtString(r.Properties.GetString("line-pattern-comp-op"))
-
-		if !m.mapnik2 {
-			symb.Opacity = fmtFloat(r.Properties.GetFloat("line-pattern-opacity"))
-		}
+		symb.Opacity = fmtFloat(r.Properties.GetFloat("line-pattern-opacity"))
 
 		result.Symbolizers = append(result.Symbolizers, &symb)
 	}
@@ -475,8 +425,13 @@ func (m *Map) addTextSymbolizer(result *Rule, r cartocss.Rule) {
 
 		symb.AllowOverlap = fmtBool(r.Properties.GetBool("text-allow-overlap"))
 
+		// TODO see for issue/upcoming fixes with 3.0 https://github.com/mapnik/mapnik/issues/2362
+
+		// spacing between repeated labels
 		symb.Spacing = fmtFloatProp(r.Properties, "text-spacing", m.scaleFactor)
+		// min-distance to other label, does not work with placement-line
 		symb.MinimumDistance = fmtFloatProp(r.Properties, "text-min-distance", m.scaleFactor)
+		// min-padding to map edge
 		symb.MinimumPadding = fmtFloatProp(r.Properties, "text-min-padding", m.scaleFactor)
 		symb.MinPathLength = fmtFloatProp(r.Properties, "text-min-path-length", m.scaleFactor)
 
@@ -487,21 +442,19 @@ func (m *Map) addTextSymbolizer(result *Rule, r cartocss.Rule) {
 			symb.FontsetName = m.fontSetName(faceNames)
 		}
 
-		if !m.mapnik2 {
-			symb.HaloOpacity = fmtFloat(r.Properties.GetFloat("text-halo-opacity"))
-			symb.HaloTransform = fmtString(r.Properties.GetString("text-halo-transform"))
-			symb.HaloCompOp = fmtString(r.Properties.GetString("text-halo-comp-op"))
-			symb.RepeatWrapCharacter = fmtBool(r.Properties.GetBool("text-repeat-wrap-characater"))
-			symb.Margin = fmtFloatProp(r.Properties, "text-margin", m.scaleFactor)
-			symb.Simplify = fmtFloat(r.Properties.GetFloat("text-simplify"))
-			symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("text-simplify-algorithm"))
-			symb.Smooth = fmtFloat(r.Properties.GetFloat("text-smooth"))
-			symb.RotateDisplacement = fmtBool(r.Properties.GetBool("text-rotate-displacement"))
-			symb.Upright = fmtString(r.Properties.GetString("text-upgright"))
-			symb.FontFeatureSettings = fmtString(r.Properties.GetString("font-feature-settings"))
-			symb.LargestBboxOnly = fmtBool(r.Properties.GetBool("text-largest-bbox-only"))
-			symb.RepeatDistance = fmtFloatProp(r.Properties, "text-repeat-distance", m.scaleFactor)
-		}
+		symb.HaloOpacity = fmtFloat(r.Properties.GetFloat("text-halo-opacity"))
+		symb.HaloTransform = fmtString(r.Properties.GetString("text-halo-transform"))
+		symb.HaloCompOp = fmtString(r.Properties.GetString("text-halo-comp-op"))
+		symb.RepeatWrapCharacter = fmtBool(r.Properties.GetBool("text-repeat-wrap-characater"))
+		symb.Margin = fmtFloatProp(r.Properties, "text-margin", m.scaleFactor)
+		symb.Simplify = fmtFloat(r.Properties.GetFloat("text-simplify"))
+		symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("text-simplify-algorithm"))
+		symb.Smooth = fmtFloat(r.Properties.GetFloat("text-smooth"))
+		symb.RotateDisplacement = fmtBool(r.Properties.GetBool("text-rotate-displacement"))
+		symb.Upright = fmtString(r.Properties.GetString("text-upgright"))
+		symb.FontFeatureSettings = fmtString(r.Properties.GetString("font-feature-settings"))
+		symb.LargestBboxOnly = fmtBool(r.Properties.GetBool("text-largest-bbox-only"))
+		symb.RepeatDistance = fmtFloatProp(r.Properties, "text-repeat-distance", m.scaleFactor)
 
 		if symb.Name != nil && *symb.Name != "" {
 			result.Symbolizers = append(result.Symbolizers, &symb)
@@ -559,17 +512,15 @@ func (m *Map) addShieldSymbolizer(result *Rule, r cartocss.Rule) {
 			symb.FontsetName = m.fontSetName(faceNames)
 		}
 
-		if !m.mapnik2 {
-			symb.HaloTransform = fmtString(r.Properties.GetString("shield-halo-transform"))
-			symb.HaloCompOp = fmtString(r.Properties.GetString("shield-halo-comp-op"))
-			symb.HaloOpacity = fmtFloat(r.Properties.GetFloat("shield-halo-opacity"))
-			symb.LabelPositionTolerance = fmtFloatProp(r.Properties, "shield-label-position-tolerance", m.scaleFactor)
-			symb.Margin = fmtFloatProp(r.Properties, "shield-margin", m.scaleFactor)
-			symb.RepeatDistance = fmtFloatProp(r.Properties, "shield-repeat-distance", m.scaleFactor)
-			symb.Simplify = fmtFloat(r.Properties.GetFloat("shield-simplify"))
-			symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("shield-simplify-algorithm"))
-			symb.Smooth = fmtFloat(r.Properties.GetFloat("shield-smooth"))
-		}
+		symb.HaloTransform = fmtString(r.Properties.GetString("shield-halo-transform"))
+		symb.HaloCompOp = fmtString(r.Properties.GetString("shield-halo-comp-op"))
+		symb.HaloOpacity = fmtFloat(r.Properties.GetFloat("shield-halo-opacity"))
+		symb.LabelPositionTolerance = fmtFloatProp(r.Properties, "shield-label-position-tolerance", m.scaleFactor)
+		symb.Margin = fmtFloatProp(r.Properties, "shield-margin", m.scaleFactor)
+		symb.RepeatDistance = fmtFloatProp(r.Properties, "shield-repeat-distance", m.scaleFactor)
+		symb.Simplify = fmtFloat(r.Properties.GetFloat("shield-simplify"))
+		symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("shield-simplify-algorithm"))
+		symb.Smooth = fmtFloat(r.Properties.GetFloat("shield-smooth"))
 
 		result.Symbolizers = append(result.Symbolizers, &symb)
 	}
@@ -602,9 +553,11 @@ func (m *Map) addMarkerSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.File = &fname
 
 	} else {
+		// carto uses 'ellipse' as default for "marker-type"
 		markerType, ok := r.Properties.GetString("marker-type")
 		if !ok {
 			markerType = "ellipse"
+			// default marker type requires at least fill, stroke or strokewidth
 			if symb.Fill == nil && symb.Stroke == nil && symb.StrokeWidth == nil {
 				return
 			}
@@ -612,13 +565,11 @@ func (m *Map) addMarkerSymbolizer(result *Rule, r cartocss.Rule) {
 		symb.MarkerType = &markerType
 	}
 
-	if !m.mapnik2 {
-		symb.AvoidEdges = fmtBool(r.Properties.GetBool("marker-avoid-edges"))
-		symb.Simplify = fmtFloat(r.Properties.GetFloat("marker-simplify"))
-		symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("marker-simplify-algorithm"))
-		symb.Offset = fmtFloatProp(r.Properties, "marker-offset", m.scaleFactor)
-		symb.Direction = fmtString(r.Properties.GetString("marker-direction"))
-	}
+	symb.AvoidEdges = fmtBool(r.Properties.GetBool("marker-avoid-edges"))
+	symb.Simplify = fmtFloat(r.Properties.GetFloat("marker-simplify"))
+	symb.SimplifyAlgorithm = fmtString(r.Properties.GetString("marker-simplify-algorithm"))
+	symb.Offset = fmtFloatProp(r.Properties, "marker-offset", m.scaleFactor)
+	symb.Direction = fmtString(r.Properties.GetString("marker-direction"))
 
 	result.Symbolizers = append(result.Symbolizers, &symb)
 }
@@ -667,16 +618,14 @@ func (m *Map) addBuildingSymbolizer(result *Rule, r cartocss.Rule) {
 }
 
 func (m *Map) addDotSymbolizer(result *Rule, r cartocss.Rule) {
-	if !m.mapnik2 {
-		if fill, ok := r.Properties.GetColor("dot-fill"); ok {
-			symb := DotSymbolizer{}
-			symb.Fill = fmtColor(fill, true)
-			symb.Opacity = fmtFloat(r.Properties.GetFloat("dot-opacity"))
-			symb.Width = fmtFloatProp(r.Properties, "dot-width", m.scaleFactor)
-			symb.Height = fmtFloatProp(r.Properties, "dot-height", m.scaleFactor)
-			symb.CompOp = fmtString(r.Properties.GetString("dot-comp-op"))
-			result.Symbolizers = append(result.Symbolizers, &symb)
-		}
+	if fill, ok := r.Properties.GetColor("dot-fill"); ok {
+		symb := DotSymbolizer{}
+		symb.Fill = fmtColor(fill, true)
+		symb.Opacity = fmtFloat(r.Properties.GetFloat("dot-opacity"))
+		symb.Width = fmtFloatProp(r.Properties, "dot-width", m.scaleFactor)
+		symb.Height = fmtFloatProp(r.Properties, "dot-height", m.scaleFactor)
+		symb.CompOp = fmtString(r.Properties.GetString("dot-comp-op"))
+		result.Symbolizers = append(result.Symbolizers, &symb)
 	}
 }
 
@@ -806,27 +755,31 @@ func fmtFilters(filters []cartocss.Filter) string {
 		case nil:
 			value = "null"
 		case string:
+			// TODO quote " in string?!
 			value = `'` + v + `'`
 		case float64:
 			value = string(*fmtFloat(v, true))
+		case cartocss.ModuloComparsion:
+			value = fmt.Sprintf("%d %s %d", v.Div, v.CompOp, v.Value)
 		default:
 			log.Printf("unknown type of filter value: %s", v)
 			value = ""
 		}
 		field := f.Field
 		if len(field) > 2 && field[0] == '"' && field[len(field)-1] == '"' {
+			// strip quotes from field name
 			field = field[1 : len(field)-1]
 		}
-		if f.CompOp != cartocss.REGEX {
-			parts = append(parts, "(["+field+"] "+f.CompOp.String()+" "+value+")")
-		} else {
+		if f.CompOp == cartocss.REGEX {
 			parts = append(parts, "(["+field+"].match("+value+"))")
+		} else {
+			parts = append(parts, "(["+field+"] "+f.CompOp.String()+" "+value+")")
 		}
 	}
 
 	s := strings.Join(parts, " and ")
-	if s != "" {
-		s = "<![CDATA[" + s + "]]>"
+	if len(filters) > 1 {
+		s = "(" + s + ")"
 	}
 	return s
 }
@@ -855,49 +808,4 @@ var webmercZoomScales = []int{
 	500,
 	250,
 	100,
-}
-
-const HTML_GT = "&gt;"
-const HTML_GT2 = "&#62;"
-const HTML_LT = "&lt;"
-const HTML_LT2 = "&#60;"
-const HTML_AMP = "&amp;"
-const HTML_AMP2 = "&#38;"
-const HTML_QUOT = "&quot;"
-const HTML_QUOT2 = "&#39;"
-const HTML_APOS = "&apos;"
-const HTML_APOS2 = "&#34;"
-const HTML_NBSP = "&nbsp;"
-const HTML_NBSP2 = "&#160;"
-
-func ReplaceSpecial(str string) string {
-	nstr := strings.ReplaceAll(str, HTML_GT, ">")
-	nstr = strings.ReplaceAll(nstr, HTML_GT2, ">")
-	nstr = strings.ReplaceAll(nstr, HTML_LT, "<")
-	nstr = strings.ReplaceAll(nstr, HTML_LT2, "<")
-	nstr = strings.ReplaceAll(nstr, HTML_AMP, "&")
-	nstr = strings.ReplaceAll(nstr, HTML_AMP2, "&")
-	nstr = strings.ReplaceAll(nstr, HTML_QUOT, "\"")
-	nstr = strings.ReplaceAll(nstr, HTML_QUOT2, "\"")
-	nstr = strings.ReplaceAll(nstr, HTML_APOS, "'")
-	nstr = strings.ReplaceAll(nstr, HTML_APOS2, "'")
-	nstr = strings.ReplaceAll(nstr, HTML_NBSP, " ")
-	nstr = strings.ReplaceAll(nstr, HTML_NBSP2, " ")
-	return nstr
-}
-
-func GenMapByMML(mmlstr, mssstr string) (*Map, error) {
-	buf := bytes.NewBuffer([]byte(mmlstr))
-	mml, e := cartocss.Parse(buf)
-	if e != nil {
-		return nil, e
-	}
-	mp := New(&config.LookupLocator{})
-	e = builder.BuildMapFromString(mp, mml, mssstr)
-	return mp, e
-}
-
-func MapToXml(mp *Map) string {
-	data, _ := xml.MarshalIndent(mp.XML, "\r", "")
-	return ReplaceSpecial(string(data))
 }

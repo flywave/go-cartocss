@@ -3,20 +3,21 @@ package builder
 import (
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/flywave/go-cartocss/config"
-
 	cartocss "github.com/flywave/go-cartocss"
+
+	"github.com/flywave/go-cartocss/config"
 )
 
+// MapMaker creates new MapWriters.
 type MapMaker interface {
 	New(config.Locator) MapWriter
+	// Type returns a unique string for this MapMaker, used for caching generated styles.
 	Type() string
 	FileSuffix() string
 }
@@ -73,6 +74,9 @@ func (s *style) isStale() (bool, error) {
 
 const stylePrefix = "carto-style-"
 
+// Cache builds styles and caches the results.
+// It automatically detects changes to the MSS and MML files and rebuilds
+// styles if requested again.
 type Cache struct {
 	mu         sync.Mutex
 	newLocator locatorCreator
@@ -91,15 +95,20 @@ func (c *Cache) SetDestination(dest string) {
 	c.destDir = dest
 }
 
+// ClearAll removes all cached styles.
+// Needs to be called before shutdown to prevent leaking temp files when used _without_ SetDestination.
+// Will remove all cached styles from cache dir when used _with_ SetDestination.
 func (c *Cache) ClearAll() {
 	c.ClearTill(time.Now())
 }
 
+// ClearTill removes all cached styles that are older then till.
 func (c *Cache) ClearTill(till time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.destDir != "" {
+		// all in same dir. also remove files with different suffixes (e.g. foo.map.font.lst)
 		files, err := filepath.Glob(filepath.Join(c.destDir, stylePrefix+"*"))
 		if err != nil {
 			log.Println("cleanup error: ", err)
@@ -113,6 +122,7 @@ func (c *Cache) ClearTill(till time.Time) {
 			}
 		}
 	} else {
+		// with empty destDir, each style is in its own temp dir.
 		for _, style := range c.styles {
 			if fi, err := os.Stat(style.file); err == nil && fi.ModTime().Before(till) {
 				if err := os.RemoveAll(filepath.Dir(style.file)); err != nil {
@@ -133,6 +143,7 @@ type Update struct {
 	UpdatedMML bool
 }
 
+// StyleFile returns the filename of the build result. (Re)builds style if required.
 func (c *Cache) StyleFile(mm MapMaker, mml string, mss []string) (string, error) {
 	style, err := c.style(mm, mml, mss)
 	if err != nil {
@@ -153,6 +164,7 @@ func (c *Cache) style(mm MapMaker, mml string, mss []string) (*style, error) {
 		if stale {
 			if len(mss) == 0 {
 				var err error
+				// refresh mss files
 				s.mss, err = mssFilesFromMML(mml)
 				if err != nil {
 					return nil, err
@@ -199,7 +211,7 @@ func (c *Cache) build(style *style) error {
 	l.UseRelPaths(false)
 
 	m := style.mapMaker.New(l)
-	builder := NewBuilder(m)
+	builder := New(m)
 	builder.SetIncludeInactive(false)
 
 	builder.SetMML(style.mml)
@@ -223,7 +235,7 @@ func (c *Cache) build(style *style) error {
 			return err
 		}
 	} else {
-		tmp, err := ioutil.TempDir("", "carto-style")
+		tmp, err := os.MkdirTemp("", "carto-style")
 		if err != nil {
 			return err
 		}

@@ -406,6 +406,7 @@ func init() {
 	}
 }
 
+// validProperty returns whether the property and the value is valid.
 func validProperty(property string, value interface{}) (bool, bool) {
 	checkFunc, ok := attributeTypes[property]
 	if !ok {

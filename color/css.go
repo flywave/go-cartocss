@@ -1,6 +1,7 @@
 package color
 
 var cssColors = map[string]string{
+	// CSS level 1
 	"black":   "#000000",
 	"silver":  "#c0c0c0",
 	"gray":    "#808080",
@@ -17,9 +18,9 @@ var cssColors = map[string]string{
 	"blue":    "#0000ff",
 	"teal":    "#008080",
 	"aqua":    "#00ffff",
-
+	// CSS level 2 (rev 1)
 	"orange": "#ffa500",
-
+	// CSS level 3
 	"aliceblue":            "#f0f8ff",
 	"antiquewhite":         "#faebd7",
 	"aquamarine":           "#7fffd4",
@@ -148,6 +149,6 @@ var cssColors = map[string]string{
 	"wheat":                "#f5deb3",
 	"whitesmoke":           "#f5f5f5",
 	"yellowgreen":          "#9acd32",
-
+	// CSS level 4
 	"rebeccapurple": "#663399",
 }

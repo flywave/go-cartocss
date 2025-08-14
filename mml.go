@@ -3,50 +3,34 @@ package cartocss
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v2"
 )
 
 type MML struct {
-	Name          string
-	Layers        []Layer
-	Stylesheets   []string
-	SRS           *string
-	BBOX          [4]float32
-	Scale         int
-	Center        [3]float32
-	Minzoom       int
-	Maxzoom       int
-	Interactivity bool
+	Name        string
+	Layers      []Layer
+	Stylesheets []string
+	Map         Map
 }
 
 type auxMML struct {
-	Name          string
-	Stylesheets   []string   `yaml:"Stylesheet"`
-	Layers        []auxLayer `yaml:"Layer"`
-	SRS           *string    `yaml:"srs,omitempty"`
-	BBOX          [4]float32 `yaml:"bounds"`
-	Scale         int        `yaml:"scale"`
-	Center        [3]float32 `yaml:"center"`
-	Minzoom       int        `yaml:"minzoom"`
-	Maxzoom       int        `yaml:"maxzoom"`
-	Interactivity bool       `yaml:"interactivity"`
+	Name        string
+	Stylesheets []string   `yaml:"Stylesheet"`
+	Layers      []auxLayer `yaml:"Layer"`
+	Map         Map        `yaml:"Map"`
 }
 
 type auxLayer struct {
-	Datasource map[string]interface{} `yaml:"datasource"`
-	Geometry   string                 `yaml:"geometry"`
-	ID         string                 `yaml:"id"`
-	Name       string                 `yaml:"name"`
-	Class      string                 `yaml:"class"`
-	CssIds     string                 `yaml:"css_ids"`
-	SRS        *string                `yaml:"srs,omitempty"`
-	Status     string                 `yaml:"status"`
-	Properties map[string]interface{} `yaml:"properties"`
-	Dataset    string                 `yaml:"dataset"`
+	Datasource map[string]interface{} `yaml:"Datasource"`
+	Geometry   string
+	ID         string
+	Name       string
+	Class      string
+	SRS        string
+	Status     string
+	Properties map[string]interface{}
 }
 
 func newLayer(l auxLayer) (*Layer, error) {
@@ -61,14 +45,13 @@ func newLayer(l auxLayer) (*Layer, error) {
 	}
 
 	classes := strings.Split(l.Class, " ")
-	ids := strings.Split(l.CssIds, " ")
 	groupBy, _ := l.Properties["group-by"].(string)
 	clearLabelCache, _ := l.Properties["clear-label-cache"].(string)
 	cacheFeatures, _ := l.Properties["cache-features"].(string)
-	ly := &Layer{
+
+	return &Layer{
 		ID:              l.ID,
 		Classes:         classes,
-		CssIds:          ids,
 		Datasource:      ds,
 		SRS:             l.SRS,
 		Type:            parseGeometryType(l.Geometry),
@@ -76,16 +59,8 @@ func newLayer(l auxLayer) (*Layer, error) {
 		GroupBy:         groupBy,
 		ClearLabelCache: clearLabelCache == "on",
 		CacheFeatures:   cacheFeatures == "on",
-	}
-	maxzoom, ok := l.Properties["maxzoom"].(int)
-	if ok {
-		ly.Maxzoom = uint32(maxzoom)
-	}
-	minzoom, ok1 := l.Properties["minzoom"].(int)
-	if ok1 {
-		ly.Minzoom = uint32(minzoom)
-	}
-	return ly, nil
+		Properties:      l.Properties,
+	}, nil
 }
 
 func parseGeometryType(t string) GeometryType {
@@ -103,8 +78,9 @@ func parseGeometryType(t string) GeometryType {
 	}
 }
 
-func newDatasource(params map[string]interface{}) (interface{}, error) {
+func newDatasource(params map[string]interface{}) (Datasource, error) {
 	d := make(map[string]string, len(params))
+	// convert all datasource params to strings (to support {srid: 1234} and {srid: "1234"}, etc.)
 	for k, v := range params {
 		if s, ok := v.(string); ok {
 			d[k] = s
@@ -114,24 +90,25 @@ func newDatasource(params map[string]interface{}) (interface{}, error) {
 	}
 
 	if d["type"] == "postgis" {
-		return PostGIS{
-			Username:      d["user"],
-			Password:      d["password"],
-			Query:         d["table"],
-			Host:          d["host"],
-			Port:          d["port"],
-			Database:      d["dbname"],
-			GeometryField: d["geometry_field"],
-			Extent:        d["extent"],
-			SRID:          d["srid"],
+		return &PostGIS{
+			Username:           d["user"],
+			Password:           d["password"],
+			Query:              d["table"],
+			Host:               d["host"],
+			Port:               d["port"],
+			Database:           d["dbname"],
+			GeometryField:      d["geometry_field"],
+			Extent:             d["extent"],
+			SRID:               d["srid"],
+			SimplifyGeometries: d["simplify_geometries"],
 		}, nil
 	} else if d["file"] != "" && (d["type"] == "shape" || d["type"] == "") {
-		return Shapefile{
+		return &Shapefile{
 			Filename: d["file"],
 			SRID:     d["srid"],
 		}, nil
 	} else if d["type"] == "sqlite" {
-		return SQLite{
+		return &SQLite{
 			Filename:      d["file"],
 			SRID:          d["srid"],
 			Query:         d["table"],
@@ -139,7 +116,7 @@ func newDatasource(params map[string]interface{}) (interface{}, error) {
 			Extent:        d["extent"],
 		}, nil
 	} else if d["type"] == "ogr" {
-		return OGR{
+		return &OGR{
 			Filename: d["file"],
 			SRID:     d["srid"],
 			Layer:    d["layer"],
@@ -148,7 +125,7 @@ func newDatasource(params map[string]interface{}) (interface{}, error) {
 		}, nil
 	} else if d["type"] == "gdal" {
 		processing := asStrings(params["processing"])
-		return GDAL{
+		return &GDAL{
 			Filename:   d["file"],
 			SRID:       d["srid"],
 			Extent:     d["extent"],
@@ -156,40 +133,13 @@ func newDatasource(params map[string]interface{}) (interface{}, error) {
 			Processing: processing,
 		}, nil
 	} else if d["type"] == "geojson" {
-		return GeoJson{
+		return &GeoJson{
 			Filename: d["file"],
 		}, nil
-	} else if d["type"] == DATASET {
-		return Dataset{
-			Type: DATASET,
-			Id:   d["id"],
-			Name: d["name"],
-		}, nil
-	} else if d["type"] == DATASET_RASTER {
-		mt, _ := strconv.ParseBool(d["multi"])
-		lox, _ := strconv.ParseFloat(d["lox"], 64)
-		loy, _ := strconv.ParseFloat(d["loy"], 64)
-		hix, _ := strconv.ParseFloat(d["hix"], 64)
-		hiy, _ := strconv.ParseFloat(d["hiy"], 64)
-		tilesize, _ := strconv.ParseUint(d["tilesize"], 10, 32)
-		tileStride, _ := strconv.ParseUint(d["hiy"], 10, 32)
-
-		return DatasetRaster{
-			Dataset: Dataset{
-				Type: DATASET,
-				Id:   d["id"],
-				Name: d["name"],
-			},
-			Multi:      mt,
-			Lox:        lox,
-			Loy:        loy,
-			Hix:        hix,
-			Hiy:        hiy,
-			Tilesize:   uint32(tilesize),
-			TileStride: uint32(tileStride),
-		}, nil
-	} else {
+	} else if d["type"] == "" {
 		return nil, nil
+	} else {
+		return nil, fmt.Errorf("unsupported datasource type %s in %v", d["type"], d)
 	}
 }
 
@@ -211,7 +161,7 @@ func asStrings(v interface{}) []string {
 
 func Parse(r io.Reader) (*MML, error) {
 	aux := auxMML{}
-	input, err := ioutil.ReadAll(r)
+	input, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
@@ -230,16 +180,10 @@ func Parse(r io.Reader) (*MML, error) {
 	}
 
 	m := MML{
-		Name:          aux.Name,
-		Layers:        layers,
-		Stylesheets:   aux.Stylesheets,
-		SRS:           aux.SRS,
-		BBOX:          aux.BBOX,
-		Scale:         aux.Scale,
-		Center:        aux.Center,
-		Minzoom:       aux.Minzoom,
-		Maxzoom:       aux.Maxzoom,
-		Interactivity: aux.Interactivity,
+		Name:        aux.Name,
+		Layers:      layers,
+		Stylesheets: aux.Stylesheets,
+		Map:         aux.Map,
 	}
 
 	return &m, nil

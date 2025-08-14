@@ -129,6 +129,7 @@ func Alpha(c Color) float64 {
 }
 
 func Multiply(c Color, v float64) Color {
+	// for compatibility Multiply must operate on RGB channels
 	r, g, b := c.ToRgb()
 	r = clamp(r * v)
 	g = clamp(g * v)
@@ -147,6 +148,7 @@ func Mix(c1, c2 Color, weight float64) Color {
 		c1 = c1.ToPerceptual()
 	}
 
+	// for compatibility Mix must operate on RGB channels
 	r1, g1, b1 := c1.ToRgb()
 	r2, g2, b2 := c2.ToRgb()
 

@@ -43,12 +43,16 @@ func TestCombinedProperties(t *testing.T) {
 		t.Error("length of combined properties does not match")
 	}
 
+	// value from p1
 	if w, _ := p3.GetFloat("line-width"); w != 0.5 {
 		t.Error("line-width not from p1", p3)
 	}
+	// pos from p1
 	if pos := p3.minPrefixPos("line-width"); len(pos) != 1 || pos[0].index != 5 {
 		t.Error("min-pos", pos)
 	}
+
+	// value from p2
 	if c, _ := p3.GetString("line-color"); c != "white" {
 		t.Error("line-color not from p2", p3)
 	}

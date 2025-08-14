@@ -19,6 +19,10 @@ type Selector struct {
 	Filters    []Filter
 }
 
+// Filter contains a single condition. A style is only applied if the Field
+// compares to the Value. Value can be a number or string for all comparsions
+// with one exception. Filter with modulo comparsion will have ModuloComparsion
+// as a value, to store the division the comparsion and the value.
 type Filter struct {
 	Field  string
 	CompOp CompOp
@@ -27,6 +31,18 @@ type Filter struct {
 
 func (f Filter) String() string {
 	return fmt.Sprintf("%s %s %v", f.Field, f.CompOp, f.Value)
+}
+
+// ModuloComparsion stores the divider and the actual comparsion for a modulo
+// filter.
+type ModuloComparsion struct {
+	Div    int
+	CompOp CompOp
+	Value  int
+}
+
+func (f ModuloComparsion) String() string {
+	return fmt.Sprintf("%d %s %d", f.Div, f.CompOp, f.Value)
 }
 
 type byField []Filter
@@ -67,6 +83,7 @@ func (r *Rule) specificity() specificity {
 	if r.Layer != "" {
 		s.layer += 1
 	}
+	// XXX attachments?
 	if r.Class != "" {
 		s.class += 1
 	}
@@ -74,6 +91,7 @@ func (r *Rule) specificity() specificity {
 	if r.Zoom != AllZoom {
 		s.filters += 1
 	}
+	// s.index = r.Properties.minPos()
 	return s
 }
 
@@ -86,6 +104,7 @@ func (s bySpecifity) Less(i, j int) bool {
 	if s.rules[i].Attachment != s.rules[j].Attachment {
 		return s.attachments[s.rules[i].Attachment] > s.attachments[s.rules[j].Attachment]
 	}
+	// TODO class?
 	if len(s.rules[i].Filters) != len(s.rules[j].Filters) {
 		return len(s.rules[i].Filters) < len(s.rules[j].Filters)
 	}
@@ -98,6 +117,8 @@ func (s bySpecifity) Less(i, j int) bool {
 	return s.rules[i].order < s.rules[j].order
 }
 
+// filterIsSubset checks whether all a filters are also in b filters (b might have more filters).
+// filters need to be sorted alpha-numerical.
 func filterIsSubset(a, b []Filter) bool {
 	if len(a) > len(b) {
 		return false
@@ -107,9 +128,11 @@ func filterIsSubset(a, b []Filter) bool {
 		found := false
 		for ; ib < len(b); ib++ {
 			if a[ia].Field > b[ib].Field {
+				// not same filter
 				continue
 			}
 			if a[ia].Field < b[ib].Field {
+				// field not in b
 				return false
 			}
 
@@ -136,8 +159,8 @@ func filterContains(a, b Filter) bool {
 
 	av, ok = a.Value.(float64)
 	if !ok {
-		tmp, ok := a.Value.(int)
-		if !ok {
+		tmp, cok := a.Value.(int)
+		if !cok {
 			return false
 		}
 		av = float64(tmp)
@@ -152,42 +175,54 @@ func filterContains(a, b Filter) bool {
 	}
 	switch a.CompOp {
 	case GT:
+		// >6 -> =7, =8, ...
 		if b.CompOp == EQ && bv > av {
 			return true
 		}
+		// >6 -> >6, >7, ...
 		if b.CompOp == GT && bv >= av {
 			return true
 		}
+		// >=6 -> >=6, >=7, ...
 		if b.CompOp == GTE && bv >= av {
 			return true
 		}
 	case GTE:
+		// >=6 -> =6, =7, ...
 		if b.CompOp == EQ && bv >= av {
 			return true
 		}
+		// >=6 -> >6, >7, ...
 		if b.CompOp == GT && bv >= av {
 			return true
 		}
+		// >=6 -> >=6, >=7, ...
 		if b.CompOp == GTE && bv >= av {
 			return true
 		}
 	case LT:
+		// <6 -> =5, =4, ...
 		if b.CompOp == EQ && bv < av {
 			return true
 		}
+		// <6 -> <6, <5, ...
 		if b.CompOp == LT && bv <= av {
 			return true
 		}
+		// <=6 -> <=6, <=5, ...
 		if b.CompOp == LTE && bv <= av {
 			return true
 		}
 	case LTE:
+		// <=6 -> =6, =5, ...
 		if b.CompOp == EQ && bv <= av {
 			return true
 		}
+		// <=6 -> <6, <5, ...
 		if b.CompOp == LT && bv <= av {
 			return true
 		}
+		// <=6 -> <=6, <=5, ...
 		if b.CompOp == LTE && bv <= av {
 			return true
 		}
@@ -195,6 +230,7 @@ func filterContains(a, b Filter) bool {
 	return false
 }
 
+// filterOverlap returns true if a does not contain any filters that conflicts with filters of b
 func filterOverlap(a, b []Filter) bool {
 	for ia := range a {
 		for ib := range b {
@@ -211,6 +247,8 @@ func filterOverlap(a, b []Filter) bool {
 	return true
 }
 
+// filterEqual returns true if a and b contain the same filter
+// filters need to be sorted alpha-numerical.
 func filterEqual(a, b []Filter) bool {
 	if len(a) != len(b) {
 		return false
@@ -255,6 +293,8 @@ func (r *Rule) String() string {
 	return fmt.Sprintf("Rule{%#v %#v %#v %v %v %s}", r.Layer, r.Attachment, r.Class, r.Filters, r.Zoom, r.Properties.String())
 }
 
+// childOf checks whether it is a more specific rule of o.
+// e.g [a=1 b=2] is more specific then just [a=1]
 func (r Rule) childOf(o Rule) bool {
 	if !(r.Layer == o.Layer || o.Layer == "") {
 		return false
@@ -274,6 +314,7 @@ func (r Rule) childOf(o Rule) bool {
 	return true
 }
 
+// same checks whether both rule selectors are the same
 func (r Rule) same(o Rule) bool {
 	if r.Layer != o.Layer {
 		return false
@@ -293,6 +334,7 @@ func (r Rule) same(o Rule) bool {
 	return true
 }
 
+// sameExceptClass checks whether both rule selectors are the same, ignores different Class value
 func (r Rule) sameExceptClass(o Rule) bool {
 	if r.Layer != o.Layer {
 		return false
@@ -309,6 +351,8 @@ func (r Rule) sameExceptClass(o Rule) bool {
 	return true
 }
 
+// overlaps checks whether the rules share a common selector do not conflict with each other.
+// e.g. [a=1 c=1]  overlaps [c=1 b=1]
 func (r Rule) overlaps(o Rule) bool {
 	if !(r.Layer == o.Layer || o.Layer == "") {
 		return false
@@ -316,6 +360,9 @@ func (r Rule) overlaps(o Rule) bool {
 	if !(r.Attachment == o.Attachment || o.Attachment == "") {
 		return false
 	}
+	// if !(r.Class == o.Class || o.Class == "") {
+	// 	return false
+	// }
 	if !(r.Zoom.combine(o.Zoom).Levels() > 0 || r.Zoom == o.Zoom) {
 		return false
 	}
@@ -325,6 +372,7 @@ func (r Rule) overlaps(o Rule) bool {
 	return true
 }
 
+// Layers returns all layer names in order of appearance.
 func (m *MSS) Layers() []string {
 	layerNames := []string{}
 	layersAdded := map[string]struct{}{}
@@ -339,16 +387,19 @@ func (m *MSS) Layers() []string {
 	return layerNames
 }
 
-func (m *MSS) LayerRules(layer string, cssIds []string, classes ...string) []Rule {
-	return m.LayerZoomRules(layer, cssIds, InvalidZoom, classes...)
+// LayerRules returns all Rules for this layer.
+func (m *MSS) LayerRules(layer string, classes ...string) []Rule {
+	return m.LayerZoomRules(layer, InvalidZoom, classes...)
 }
 
-func (m *MSS) LayerZoomRules(layer string, cssIds []string, zoom ZoomRange, classes ...string) []Rule {
-	attachments := make(map[string]int)
+// LayerZoomRules returns all Rules for this layer within the specified ZoomRange.
+func (m *MSS) LayerZoomRules(layer string, zoom ZoomRange, classes ...string) []Rule {
+	attachments := make(map[string]int) // store order of first appearance
 	rules := []Rule{}
 	order := 1
 	var collect func(*block, Rule)
 	collect = func(node *block, parent Rule) {
+		// recurse into root/empty blocks without selectors
 		if len(node.selectors) == 0 {
 			for _, n := range node.blocks {
 				collect(n, parent)
@@ -364,16 +415,10 @@ func (m *MSS) LayerZoomRules(layer string, cssIds []string, zoom ZoomRange, clas
 				Zoom:       parent.Zoom,
 			}
 			if s.Layer != "" {
-				for _, id := range cssIds {
-					if s.Layer != id {
-						continue
-					}
-					current.Layer = s.Layer
-					break
+				if s.Layer != layer {
+					continue
 				}
-			}
-			if current.Layer == "" {
-				continue
+				current.Layer = s.Layer
 			}
 			foundClass := false
 			if s.Class != "" {
@@ -392,6 +437,7 @@ func (m *MSS) LayerZoomRules(layer string, cssIds []string, zoom ZoomRange, clas
 				if _, ok := attachments[s.Attachment]; !ok {
 					attachments[s.Attachment] = order
 				}
+				// TODO handle 'hidden' attachments, eg. bar in "::foo { ::bar {}}"
 				current.Attachment = s.Attachment
 			}
 			if s.Filters != nil {
@@ -414,25 +460,34 @@ func (m *MSS) LayerZoomRules(layer string, cssIds []string, zoom ZoomRange, clas
 				}
 			}
 
-			if node.properties != nil && !node.properties.isEmpty() {
-				order += 1
-				r := Rule{
-					Layer:      current.Layer,
-					Class:      current.Class,
-					Attachment: current.Attachment,
-					Filters:    append([]Filter{}, current.Filters...),
-					Zoom:       current.Zoom,
-					Properties: node.properties.clone(),
-					order:      order,
+			if (s.Layer == layer || s.Layer == "") && (foundClass || s.Class == "") {
+				// carto adds empty properties, eg.
+				// type=baz gets added to foo even if zoom does not match in nested define
+				// #foo[zoom=18],
+				// #bar[zoom=19] {
+				//   [type='baz'] { [zoom=19] { line-width: 10 }
+				// }
+
+				if node.properties != nil && !node.properties.isEmpty() {
+					order += 1
+					r := Rule{
+						Layer:      current.Layer,
+						Class:      current.Class,
+						Attachment: current.Attachment,
+						Filters:    append([]Filter{}, current.Filters...),
+						Zoom:       current.Zoom,
+						Properties: node.properties.clone(),
+						order:      order,
+					}
+					spec := r.specificity()
+					for _, k := range r.Properties.keys() {
+						r.Properties.setSpecificity(k, spec)
+					}
+					rules = append(rules, r)
 				}
-				spec := r.specificity()
-				for _, k := range r.Properties.keys() {
-					r.Properties.setSpecificity(k, spec)
+				for _, n := range node.blocks {
+					collect(n, current)
 				}
-				rules = append(rules, r)
-			}
-			for _, n := range node.blocks {
-				collect(n, current)
 			}
 		}
 	}
@@ -449,6 +504,7 @@ func (m *MSS) LayerZoomRules(layer string, cssIds []string, zoom ZoomRange, clas
 	return rules
 }
 
+// combineRules creates a new rule: based on a, missing properties from b, and combined filters
 func combineRules(a, b Rule) Rule {
 	r := Rule{
 		Layer:      a.Layer,
@@ -481,6 +537,7 @@ nextFilter:
 		}
 		combined = append(combined, f)
 	}
+	// XXX sort
 	sort.Sort(byField(combined))
 	return combined
 }
@@ -555,6 +612,7 @@ func sortedRules(rules []Rule, attachments map[string]int, classes []string) []R
 	if len(rules) == 0 {
 		return nil
 	}
+	// sort rules, most specific rules first (eg. z=15 before z>=15)
 	sort.Sort(sort.Reverse(bySpecifity{rules: rules, attachments: attachments}))
 
 	if debugRules >= 1 {
@@ -564,9 +622,11 @@ func sortedRules(rules []Rule, attachments map[string]int, classes []string) []R
 		}
 		fmt.Fprintln(os.Stderr, "\nfilling rules")
 	}
+	// add properties of more generic rules (parent) to specific rules (child)
 
 	var added int
 	for pos := 0; pos < len(rules); {
+		// fmt.Fprintln(os.Stderr, pos, len(rules))
 		if debugRules >= 1 {
 			fmt.Fprintln(os.Stderr, "pre-extend")
 			for i, rr := range rules {
@@ -599,10 +659,19 @@ func sortedRules(rules []Rule, attachments map[string]int, classes []string) []R
 	return dedup(rules)
 }
 
+// dedup removes all duplicates
 func dedup(rules []Rule) []Rule {
+	// record hash of already added rules to detect duplicates
 	added := make(map[uint64]struct{}, len(rules))
 	result := []Rule{}
 	for i := range rules {
+		// TODO: detect duplicates styles where filters/zoom can be combined
+		// if i != 0 && filterEqual(rules[i-1].Filters, rules[i].Filters) {
+		// 	if rules[i-1].Properties.equal(rules[i].Properties) {
+		// 		// update result[-1].zoom to combined zoom -> >=13 + >=15 -> >=13
+		// 		continue
+		// 	}
+		// }
 		hash := rules[i].hash()
 		if _, ok := added[hash]; !ok {
 			result = append(result, rules[i])
@@ -612,6 +681,7 @@ func dedup(rules []Rule) []Rule {
 	return result
 }
 
+// dedup removes all duplicates, merges rules with different classes
 func dedupMergeClasses(rules []Rule, classes []string) []Rule {
 	classIdx := func(class string) int {
 		if class == "" {
@@ -648,17 +718,6 @@ func dedupMergeClasses(rules []Rule, classes []string) []Rule {
 		}
 	}
 	return result
-}
-
-func assertSortedFilters(filters []Filter) {
-	for i := range filters {
-		if i == 0 {
-			continue
-		}
-		if filters[i-1].Field > filters[i].Field {
-			panic(fmt.Sprintf("filter not sorted: %v\n", filters))
-		}
-	}
 }
 
 func mergeFilters(a, b []Filter) ([]Filter, bool) {
@@ -738,5 +797,4 @@ func RulesZoom(rs []Rule) ZoomRange {
 		z = ZoomRange(r.Zoom | z)
 	}
 	return z
-
 }

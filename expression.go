@@ -90,7 +90,7 @@ func (e *expression) addValue(val interface{}, t codeType) {
 	e.code = append(e.code, code{T: t, Value: val})
 }
 
-func (e *expression) clear() {
+func (e *expression) Clear() {
 	e.code = e.code[:0]
 }
 
@@ -103,6 +103,7 @@ func (e *expression) evaluate() (Value, error) {
 		return nil, fmt.Errorf("unable to evaluate expression")
 	}
 	if len(codes) > 1 {
+		// create copy since c points to internal code slice
 		l := make([]Value, 0, len(codes))
 		for _, c := range codes {
 			l = append(l, c.Value)
@@ -134,6 +135,7 @@ func evaluate(codes []code) ([]code, int, error) {
 			if err != nil {
 				return v, 0, err
 			}
+			// TODO refactor parameter checking
 			if colorF, ok := colorFuncs[c.Value.(string)]; ok {
 				if len(v) != 2 {
 					return nil, 0, fmt.Errorf("function %s takes exactly two arguments, got %d", c.Value.(string), len(v))
@@ -196,18 +198,19 @@ func evaluate(codes []code) ([]code, int, error) {
 				}
 				c := [4]float64{1, 1, 1, 1}
 				for i := range v {
-					if v[i].T == typeNum {
+					switch v[i].T {
+					case typeNum:
 						if i < 3 {
 							c[i] = v[i].Value.(float64) / 255
 						} else {
-							c[i] = v[i].Value.(float64)
+							c[i] = v[i].Value.(float64) // alpha value is from 0.0-1.0
 							if c[i] > 1.0 {
-								c[i] /= 255
+								c[i] /= 255 // TODO or clamp? compat with Carto?
 							}
 						}
-					} else if v[i].T == typePercent {
+					case typePercent:
 						c[i] = v[i].Value.(float64) / 100
-					} else {
+					default:
 						return nil, 0, fmt.Errorf("rgb/rgba takes float or percent arguments only, got %v", v[i])
 					}
 					if c[i] < 0 {
@@ -226,18 +229,19 @@ func evaluate(codes []code) ([]code, int, error) {
 				}
 				c := [4]float64{1, 1, 1, 1}
 				for i := range v {
-					if v[i].T == typeNum {
+					switch v[i].T {
+					case typeNum:
 						if i == 0 {
 							c[i] = v[i].Value.(float64)
 						} else {
-							c[i] = v[i].Value.(float64)
+							c[i] = v[i].Value.(float64) // saturation, lightness, alpha values are from 0.0-1.0
 							if c[i] > 1.0 {
 								c[i] = 1.0
 							} else if c[i] < 0 {
 								c[i] = 0
 							}
 						}
-					} else if v[i].T == typePercent {
+					case typePercent:
 						if i == 0 {
 							c[i] = v[i].Value.(float64) / 360
 							if c[i] < 0 {
@@ -253,7 +257,7 @@ func evaluate(codes []code) ([]code, int, error) {
 								c[i] = 1.0
 							}
 						}
-					} else {
+					default:
 						return nil, 0, fmt.Errorf("hsl/hsla takes float or percent arguments only, got %v", v[i])
 					}
 				}
@@ -267,18 +271,19 @@ func evaluate(codes []code) ([]code, int, error) {
 				}
 				c := [4]float64{1, 1, 1, 1}
 				for i := range v {
-					if v[i].T == typeNum {
+					switch v[i].T {
+					case typeNum:
 						if i == 0 {
 							c[i] = v[i].Value.(float64)
 						} else {
-							c[i] = v[i].Value.(float64)
+							c[i] = v[i].Value.(float64) // saturation, lightness, alpha values are from 0.0-1.0
 							if c[i] > 1.0 {
 								c[i] = 1.0
 							} else if c[i] < 0 {
 								c[i] = 0
 							}
 						}
-					} else if v[i].T == typePercent {
+					case typePercent:
 						if i == 0 {
 							c[i] = v[i].Value.(float64) / 360
 							if c[i] < 0 {
@@ -294,7 +299,7 @@ func evaluate(codes []code) ([]code, int, error) {
 								c[i] = 1.0
 							}
 						}
-					} else {
+					default:
 						return nil, 0, fmt.Errorf("husl/husla takes float or percent arguments only, got %v", v[i])
 					}
 				}
@@ -341,6 +346,7 @@ func evaluate(codes []code) ([]code, int, error) {
 					codes[top] = code{T: typeNum, Value: a.Value.(float64) / b.Value.(float64)}
 				}
 			} else if c.T == typeAdd && a.T == typeString && b.T == typeString {
+				// string concatenation
 				codes[top] = code{T: typeString, Value: a.Value.(string) + b.Value.(string)}
 			} else if c.T == typeAdd && a.T == typeString && b.T == typeField {
 				codes[top] = code{T: typeFieldExpr, Value: []Value{a.Value.(string), Field(b.Value.(string))}}
@@ -371,7 +377,7 @@ type Stop struct {
 	Color color.Color
 }
 
-type functype func(args []code) ([]code, error)
+type Functype func(args []code) ([]code, error)
 
 var colorFuncs map[string]colorFunc
 var colorParams map[string]colorParam

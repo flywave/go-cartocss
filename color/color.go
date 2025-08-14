@@ -105,6 +105,8 @@ func (color Color) ToPerceptual() Color {
 	if color.Perceptual {
 		return color
 	} else {
+		// transition via RGB, because HSL values cannot be directly
+		// transformed into HUSL values easily
 		r, g, b := hslToRgb(color.H, color.S, color.L)
 		color.H, color.S, color.L = hsluv.HsluvFromRGB(r, g, b)
 		color.S /= 100
@@ -118,6 +120,8 @@ func (color Color) ToStandard() Color {
 	if !color.Perceptual {
 		return color
 	} else {
+		// transition via RGB, because HUSL values cannot be directly
+		// transformed into HSL values easily
 		r, g, b := hsluv.HsluvToRGB(color.H, color.S, color.L)
 		color.H, color.S, color.L = rgbToHsl(r, g, b)
 		color.Perceptual = false

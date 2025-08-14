@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/BurntSushi/toml"
+	"time"
 
 	cartocss "github.com/flywave/go-cartocss"
+
+	"github.com/BurntSushi/toml"
 )
 
 type CartoCSS struct {
@@ -21,8 +22,9 @@ type CartoCSS struct {
 }
 
 type Mapnik struct {
-	PluginDirs []string `toml:"plugin_dirs"`
-	FontDirs   []string `toml:"font_dirs"`
+	PluginDirs       []string      `toml:"plugin_dirs"`
+	FontDirs         []string      `toml:"font_dirs"`
+	CacheWaitTimeout time.Duration `toml:"cache_wait_timeout"`
 }
 
 type Datasource struct {
@@ -63,11 +65,17 @@ func Load(fileName string) (*CartoCSS, error) {
 		return &config, err
 	}
 
+	// make dirs relative to BaseDir
+	// datasource dirs are converted in Locator
 	if !filepath.IsAbs(config.StylesDir) {
 		config.StylesDir = filepath.Join(config.BaseDir, config.StylesDir)
 	}
 	if !filepath.IsAbs(config.OutDir) {
 		config.OutDir = filepath.Join(config.BaseDir, config.OutDir)
+	}
+
+	if config.Mapnik.CacheWaitTimeout == 0 {
+		config.Mapnik.CacheWaitTimeout = 5 * time.Second
 	}
 
 	return &config, nil
@@ -146,6 +154,7 @@ func (l *LookupLocator) UseRelPaths(rel bool) {
 }
 
 func (l *LookupLocator) find(basename string, dirs []string) (string, bool) {
+	// helper func: check if basename exists in dir
 	check := func(dir string) string {
 		fname := filepath.Join(dir, basename)
 		if _, err := os.Stat(fname); err == nil {
@@ -154,24 +163,30 @@ func (l *LookupLocator) find(basename string, dirs []string) (string, bool) {
 		return ""
 	}
 
+	// check for file in different dirs, uses closure so that
+	// we can return if we found the file
 	fname, ok := func() (string, bool) {
+		// check without any dir if it's an absolute path
 		if filepath.IsAbs(basename) {
 			if fname := check(""); fname != "" {
 				return fname, true
 			}
 		}
 
+		// check passed dirs
 		for _, d := range dirs {
 			if fname := check(d); fname != "" {
 				return fname, true
 			}
 		}
+		// check data dirs
 		for _, d := range l.dataDirs {
 			if fname := check(d); fname != "" {
 				return fname, true
 			}
 		}
 
+		// at last check with basedir
 		if fname := check(l.baseDir); fname != "" {
 			return fname, true
 		}
@@ -180,6 +195,7 @@ func (l *LookupLocator) find(basename string, dirs []string) (string, bool) {
 	}()
 
 	if !ok {
+		// register as missing file
 		if l.missing == nil {
 			l.missing = make(map[string]struct{})
 		}
@@ -198,7 +214,7 @@ func (l *LookupLocator) find(basename string, dirs []string) (string, bool) {
 			fname = relfname
 		}
 	} else {
-		if !filepath.IsAbs(fname) {
+		if !filepath.IsAbs(fname) { // for missing files
 			fname = filepath.Join(l.outDir, fname)
 		}
 	}
@@ -230,6 +246,7 @@ func (l *LookupLocator) Font(basename string) string {
 		if file, ok := l.find(variation, l.fontDirs); ok {
 			return file
 		} else {
+			// only record basename, if all variations fail
 			delete(l.missing, variation)
 		}
 	}
@@ -250,7 +267,7 @@ func (l *LookupLocator) Image(basename string) string {
 	return fname
 }
 func (l *LookupLocator) Data(basename string) string {
-	fname, _ := l.find(basename, nil)
+	fname, _ := l.find(basename, nil) // dataDir is already searched by l.find
 	return fname
 }
 
@@ -307,7 +324,7 @@ func fontVariations(font, suffix string) []string {
 		)
 	}
 
-	if len(parts) > 1 {
+	if len(parts) > 1 { // drop last part for "DejaVu Sans Book" -> DejaVuSans.ttf variation
 		result = append(result, strings.Join(parts[:len(parts)-1], "")+suffix)
 	}
 

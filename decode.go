@@ -12,6 +12,9 @@ import (
 	"github.com/flywave/go-cartocss/color"
 )
 
+// Decoder decodes one or more MSS files. Parse/ParseFile can be called
+// multiple times to decode dependent .mss files. MSS() returns the current
+// decoded style.
 type Decoder struct {
 	mss           *MSS
 	vars          *Properties
@@ -21,7 +24,7 @@ type Decoder struct {
 	expr          *expression
 	lastValue     Value
 	warnings      []warning
-	filename      string
+	filename      string // for warnings/errors only
 	filesParsed   int
 	propertyIndex int
 }
@@ -75,7 +78,7 @@ func (d *Decoder) next() *token {
 	for {
 		tok := d.scanner.Next()
 		if tok.t == tokenError {
-			d.error(d.pos(tok), tok.value)
+			d.error(d.pos(tok), "%s", tok.value)
 		}
 		if tok.t != tokenS && tok.t != tokenComment {
 			d.lastTok = tok
@@ -131,7 +134,7 @@ func (d *Decoder) ParseString(content string) (err error) {
 			break
 		}
 		if tok.t == tokenError {
-			return fmt.Errorf(tok.String())
+			return fmt.Errorf("%s", tok.String())
 		}
 
 		d.topLevel(tok)
@@ -179,9 +182,9 @@ func (d *Decoder) evaluateExpression(expr *expression) Value {
 			if v == nil {
 				d.error(expr.pos, "missing var %s in expression", varname)
 			}
-			if expr, ok := v.(*expression); ok {
+			if cexpr, ok := v.(*expression); ok {
 				// evaluate recursive
-				v = d.evaluateExpression(expr)
+				v = d.evaluateExpression(cexpr)
 				d.vars.set(varname, v)
 			}
 			t := d.valueType(v)
@@ -299,7 +302,8 @@ func (d *Decoder) block() {
 }
 
 // decode multiple selectors, eg:
-//   #foo, #bar[zoom=3]
+//
+//	#foo, #bar[zoom=3]
 func (d *Decoder) selectors(tok *token) {
 	for {
 		if tok.t == tokenHash || tok.t == tokenAttachment || tok.t == tokenClass || tok.t == tokenLBracket {
@@ -324,7 +328,8 @@ func (d *Decoder) selectors(tok *token) {
 }
 
 // decode single selector, eg:
-//   #foo::attachment[filter=foo][zoom>=12]
+//
+//	#foo::attachment[filter=foo][zoom>=12]
 func (d *Decoder) selector(tok *token) {
 	d.mss.pushSelector()
 	for {
@@ -350,7 +355,8 @@ func (d *Decoder) selector(tok *token) {
 }
 
 // decode multiple filters. eg:
-//   [filter=foo][zoom>=12]
+//
+//	[filter=foo][zoom>=12]
 func (d *Decoder) filters(tok *token) {
 	for {
 		d.filter()
@@ -365,7 +371,8 @@ func (d *Decoder) filters(tok *token) {
 }
 
 // decode single filters. eg:
-//   [filter=foo]
+//
+//	[filter=foo]
 func (d *Decoder) filter() {
 	tok := d.next()
 	if tok.t == tokenIdent && tok.value == "zoom" {
@@ -397,31 +404,60 @@ func (d *Decoder) filter() {
 	}
 
 	compOp := d.comp()
-	tok = d.next()
 	var value interface{}
-	switch tok.t {
-	case tokenString:
-		value = tok.value[1 : len(tok.value)-1]
-	case tokenNumber:
-		value, _ = strconv.ParseFloat(tok.value, 64)
-	case tokenIdent:
-		if tok.value == "null" {
-			value = nil
-		} else {
+	if compOp == MODULO {
+		// Modulo comparsions expect the divider, a comparsion and a value, eg: x % 2 = 1
+		// These extra values are stored in the filter value inside a ModuloComparsion struct.
+		tok = d.next()
+		if tok.t != tokenNumber {
+			d.error(d.pos(tok), "expected %v found %v", tokenNumber, tok)
+		}
+		div, err := strconv.ParseInt(tok.value, 10, 64)
+		if err != nil {
+			d.error(d.pos(tok), "expected integer for modulo, found %v", tok)
+		}
+
+		modCompOp := d.comp()
+		if modCompOp > NEQ {
+			d.error(d.pos(tok), "expected simple comparsion, found %v", modCompOp)
+		}
+		tok = d.next()
+		if tok.t != tokenNumber {
+			d.error(d.pos(tok), "expected %v found %v", tokenNumber, tok)
+		}
+		compValue, err := strconv.ParseInt(tok.value, 10, 64)
+		if err != nil {
+			d.error(d.pos(tok), "expected integer for modulo comparsion, found %v", tok)
+		}
+		value = ModuloComparsion{Div: int(div), CompOp: modCompOp, Value: int(compValue)}
+	} else {
+		// All other comparsions expect a single value.
+		tok = d.next()
+		switch tok.t {
+		case tokenString:
+			value = tok.value[1 : len(tok.value)-1]
+		case tokenNumber:
+			value, _ = strconv.ParseFloat(tok.value, 64)
+		case tokenIdent:
+			if tok.value == "null" {
+				value = nil
+			} else {
+				d.error(d.pos(tok), "unexpected value in filter '%s'", tok.value)
+			}
+		default:
 			d.error(d.pos(tok), "unexpected value in filter '%s'", tok.value)
 		}
-	default:
-		d.error(d.pos(tok), "unexpected value in filter '%s'", tok.value)
 	}
 	d.expect(tokenRBracket)
 	d.mss.addFilter(field, compOp, value)
 }
 
 // decode comparision. eg:
-//   = or >=
+//
+//	= or >=
 func (d *Decoder) comp() CompOp {
 	tok := d.next()
-	if tok.t != tokenComp {
+	if tok.t != tokenComp && tok.t != tokenModulo {
 		d.error(d.pos(tok), "expected comparsion, got '%s'", tok.value)
 	}
 	compOp, err := parseCompOp(tok.value)
@@ -484,13 +520,14 @@ func (d *Decoder) exprPart() {
 
 	for {
 		tok := d.next()
-		if tok.t == tokenPlus {
+		switch tok.t {
+		case tokenPlus:
 			d.mulExpr()
 			d.expr.addOperator(typeAdd)
-		} else if tok.t == tokenMinus {
+		case tokenMinus:
 			d.mulExpr()
 			d.expr.addOperator(typeSubtract)
-		} else {
+		default:
 			d.backup()
 			break
 		}
@@ -502,13 +539,14 @@ func (d *Decoder) mulExpr() {
 
 	for {
 		tok := d.next()
-		if tok.t == tokenMultiply {
+		switch tok.t {
+		case tokenMultiply:
 			d.negOrValue()
 			d.expr.addOperator(typeMultiply)
-		} else if tok.t == tokenDivide {
+		case tokenDivide:
 			d.negOrValue()
 			d.expr.addOperator(typeDivide)
-		} else {
+		default:
 			d.backup()
 			break
 		}

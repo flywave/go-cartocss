@@ -1,22 +1,47 @@
 package cartocss
 
 type PostGIS struct {
-	Id            string
-	Host          string
-	Port          string
-	Database      string
-	Username      string
-	Password      string
-	Query         string
-	SRID          string
-	GeometryField string
-	Extent        string
+	Id                 string
+	Host               string
+	Port               string
+	Database           string
+	Username           string
+	Password           string
+	Query              string
+	SRID               string
+	GeometryField      string
+	Extent             string
+	SimplifyGeometries string
+}
+
+func (p *PostGIS) GetId() string {
+	return p.Id
+}
+
+func (p *PostGIS) GetType() string {
+	return "postgis"
+}
+
+func (p *PostGIS) GetName() string {
+	return p.Id
 }
 
 type Shapefile struct {
 	Id       string
 	Filename string
 	SRID     string
+}
+
+func (s *Shapefile) GetId() string {
+	return s.Id
+}
+
+func (s *Shapefile) GetType() string {
+	return "shapefile"
+}
+
+func (s *Shapefile) GetName() string {
+	return s.Id
 }
 
 type SQLite struct {
@@ -28,6 +53,18 @@ type SQLite struct {
 	Extent        string
 }
 
+func (s *SQLite) GetId() string {
+	return s.Id
+}
+
+func (s *SQLite) GetType() string {
+	return "sqlite"
+}
+
+func (s *SQLite) GetName() string {
+	return s.Id
+}
+
 type OGR struct {
 	Id       string
 	Filename string
@@ -35,6 +72,18 @@ type OGR struct {
 	Layer    string
 	Query    string
 	Extent   string
+}
+
+func (o *OGR) GetId() string {
+	return o.Id
+}
+
+func (o *OGR) GetType() string {
+	return "ogr"
+}
+
+func (o *OGR) GetName() string {
+	return o.Id
 }
 
 type GDAL struct {
@@ -46,9 +95,33 @@ type GDAL struct {
 	Processing []string
 }
 
+func (g *GDAL) GetId() string {
+	return g.Id
+}
+
+func (g *GDAL) GetType() string {
+	return "gdal"
+}
+
+func (g *GDAL) GetName() string {
+	return g.Id
+}
+
 type GeoJson struct {
 	Id       string
 	Filename string
+}
+
+func (g *GeoJson) GetId() string {
+	return g.Id
+}
+
+func (g *GeoJson) GetType() string {
+	return "geojson"
+}
+
+func (g *GeoJson) GetName() string {
+	return g.Id
 }
 
 const (

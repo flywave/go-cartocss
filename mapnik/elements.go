@@ -6,7 +6,7 @@ import (
 
 type XMLMap struct {
 	XMLName    xml.Name    `xml:"Map"`
-	SRS        *string     `xml:"srs,attr"`
+	SRS        string      `xml:"srs,attr"`
 	BgColor    *string     `xml:"background-color,attr"`
 	Parameters []Parameter `xml:"Parameters>Parameter"`
 	FontSets   []FontSet   `xml:"FontSet"`
@@ -16,7 +16,7 @@ type XMLMap struct {
 
 type Parameter struct {
 	Name  string `xml:"name,attr"`
-	Value string `xml:",cdata"`
+	Value string `xml:",chardata"`
 }
 
 type FontSet struct {
@@ -59,15 +59,13 @@ type Layer struct {
 	Name            string       `xml:"name,attr"`
 	SRS             *string      `xml:"srs,attr"`
 	Status          string       `xml:"status,attr,omitempty"`
-	MaxZoom         int          `xml:"maxzoom,attr,omitempty"`
-	MinZoom         int          `xml:"minzoom,attr,omitempty"`
 	MaxScaleDenom   int          `xml:"maximum-scale-denominator,attr,omitempty"`
 	MinScaleDenom   int          `xml:"minimum-scale-denominator,attr,omitempty"`
 	GroupBy         string       `xml:"group-by,attr,omitempty"`
 	ClearLabelCache string       `xml:"clear-label-cache,attr,omitempty"`
 	CacheFeatures   string       `xml:"cache-features,attr,omitempty"`
 	StyleNames      []string     `xml:"StyleName"`
-	Datasource      *[]Parameter `xml:"Datasource>Parameter"`
+	Datasource      *[]Parameter `xml:"Datasource>Parameter"` // as pointer to prevent empty Datasource tag for layers without datasource
 }
 
 type PolygonSymbolizer struct {
@@ -182,7 +180,7 @@ type TextSymbolizer struct {
 	LineSpacing            *string  `xml:"line-spacing,attr"`
 	MinimumDistance        *string  `xml:"minimum-distance,attr"`
 	MinimumPadding         *string  `xml:"minimum-padding,attr"`
-	Name                   *string  `xml:",cdata"`
+	Name                   *string  `xml:",chardata"`
 	Opacity                *string  `xml:"opacity,attr"`
 	Orientation            *string  `xml:"orientation,attr"`
 	Placement              *string  `xml:"placement,attr"`
@@ -264,7 +262,7 @@ type ShieldSymbolizer struct {
 	LineSpacing            *string  `xml:"line-spacing,attr"`
 	MinimumDistance        *string  `xml:"minimum-distance,attr"`
 	MinimumPadding         *string  `xml:"minimum-padding,attr"`
-	Name                   *string  `xml:",cdata"`
+	Name                   *string  `xml:",chardata"`
 	Opacity                *string  `xml:"opacity,attr"`
 	Placement              *string  `xml:"placement,attr"`
 	PlacementType          *string  `xml:"placement-type,attr"`

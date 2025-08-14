@@ -8,12 +8,15 @@ import (
 	"unicode/utf8"
 )
 
+// tokenType identifies the type of lexical tokens.
 type tokenType int
 
+// String returns a string representation of the token type.
 func (t tokenType) String() string {
 	return tokenNames[t]
 }
 
+// token represents a token and the corresponding string.
 type token struct {
 	t      tokenType
 	value  string
@@ -21,6 +24,7 @@ type token struct {
 	column int
 }
 
+// String returns a string representation of the token.
 func (t *token) String() string {
 	if len(t.value) > 10 {
 		return fmt.Sprintf("%s (line: %d, column: %d): %.10q...",
@@ -30,7 +34,9 @@ func (t *token) String() string {
 		t.t, t.line, t.column, t.value)
 }
 
+// The complete list of tokens in MSS.
 const (
+	// Scanner flags
 	tokenError tokenType = iota
 	tokenEOF
 	// regular tokens
@@ -54,6 +60,7 @@ const (
 	tokenMinus
 	tokenMultiply
 	tokenDivide
+	tokenModulo
 	tokenComp
 	tokenNumber
 	tokenPercentage
@@ -72,6 +79,7 @@ const (
 	tokenBOM
 )
 
+// tokenNames maps tokenType's to their names. Used for conversion to string.
 var tokenNames = map[tokenType]string{
 	tokenError:          "error",
 	tokenEOF:            "EOF",
@@ -95,6 +103,7 @@ var tokenNames = map[tokenType]string{
 	tokenMinus:          "MINUS",
 	tokenMultiply:       "MULTIPLY",
 	tokenDivide:         "DIVIDE",
+	tokenModulo:         "MODULO",
 	tokenComp:           "COMP",
 	tokenNumber:         "NUMBER",
 	tokenPercentage:     "PERCENTAGE",
@@ -113,9 +122,14 @@ var tokenNames = map[tokenType]string{
 	tokenBOM:            "BOM",
 }
 
+// Macros and productions -----------------------------------------------------
+// http://www.w3.org/TR/css3-syntax/#tokenization
+
 var macroRegexp = regexp.MustCompile(`\{[a-z]+\}`)
 
+// macros maps macro names to patterns to be expanded.
 var macros = map[string]string{
+	// must be escaped: `\.+*?()|[]{}^$`
 	"ident":      `-?{nmstart}{nmchar}*`,
 	"name":       `{nmchar}+`,
 	"nmstart":    `[a-zA-Z_]|{nonascii}|{escape}`,
@@ -132,7 +146,9 @@ var macros = map[string]string{
 	"wc":         `[\t\n\f\r ]`,
 }
 
+// productions maps the list of tokens to patterns to be expanded.
 var productions = map[tokenType]string{
+	// Unused regexps (matched using other methods) are commented out.
 	tokenIdent:        `{ident}`,
 	tokenAtKeyword:    `@{ident}`,
 	tokenString:       `{string}`,
@@ -158,8 +174,14 @@ var productions = map[tokenType]string{
 	//tokenBOM:            "\uFEFF",
 }
 
+// matchers maps the list of tokens to compiled regular expressions.
+//
+// The map is filled on init() using the macros and productions defined in
+// the CSS specification.
 var matchers = map[tokenType]*regexp.Regexp{}
 
+// matchOrder is the order to test regexps when first-char shortcuts
+// can't be used.
 var matchOrder = []tokenType{
 	tokenURI,
 	tokenFunction,
@@ -173,6 +195,7 @@ var matchOrder = []tokenType{
 }
 
 func init() {
+	// replace macros and compile regexps for productions.
 	replaceMacro := func(s string) string {
 		return "(?:" + macros[s[1:len(s)-1]] + ")"
 	}
@@ -184,22 +207,11 @@ func init() {
 	}
 }
 
-func ScannerIds(css string) []string {
-	scan := newScanner(css)
-	var ids []string
-	for {
-		t := scan.Next()
-		if t.t == tokenEOF {
-			break
-		}
-		if t.t == tokenHash {
-			ids = append(ids, string([]byte(t.value)[1:]))
-		}
-	}
-	return ids
-}
+// Scanner --------------------------------------------------------------------
 
+// New returns a new CSS scanner for the given input.
 func newScanner(input string) *scanner {
+	// Normalize newlines.
 	input = strings.Replace(input, "\r\n", "\n", -1)
 	return &scanner{
 		input: input,
@@ -208,6 +220,7 @@ func newScanner(input string) *scanner {
 	}
 }
 
+// Scanner scans an input and emits tokens following the CSS3 specification.
 type scanner struct {
 	input string
 	pos   int
@@ -216,6 +229,12 @@ type scanner struct {
 	err   *token
 }
 
+// Next returns the next token from the input.
+//
+// At the end of the input the token type is tokenEOF.
+//
+// If the input can't be tokenized the token type is tokenError. This occurs
+// in case of unclosed quotation marks or comments.
 func (s *scanner) Next() *token {
 	if s.err != nil {
 		return s.err
@@ -225,15 +244,22 @@ func (s *scanner) Next() *token {
 		return s.err
 	}
 	if s.pos == 0 {
+		// Test BOM only once, at the beginning of the file.
 		if strings.HasPrefix(s.input, "\uFEFF") {
 			return s.emitSimple(tokenBOM, "\uFEFF")
 		}
 	}
+	// There's a lot we can guess based on the first byte so we'll take a
+	// shortcut before testing multiple regexps.
 	input := s.input[s.pos:]
 	switch input[0] {
 	case '\t', '\n', '\f', '\r', ' ':
+		// Whitespace.
 		return s.emitToken(tokenS, matchers[tokenS].FindString(input))
 	case '.':
+		// Dot is too common to not have a quick check.
+		// We'll test if this is a Char; if it is followed by a number it is a
+		// dimension/percentage/number, and this will be matched later.
 		if len(input) > 1 && !unicode.IsDigit(rune(input[1])) {
 			if match := matchers[tokenClass].FindString(input); match != "" {
 				return s.emitSimple(tokenClass, match)
@@ -241,21 +267,27 @@ func (s *scanner) Next() *token {
 			return s.emitSimple(tokenChar, ".")
 		}
 	case '#':
+		// Another common one: Hash or Char.
 		if match := matchers[tokenHash].FindString(input); match != "" {
 			return s.emitSimple(tokenHash, match)
 		}
 		return s.emitSimple(tokenChar, "#")
 	case '@':
+		// Another common one: AtKeyword or Char.
 		if match := matchers[tokenAtKeyword].FindString(input); match != "" {
 			return s.emitSimple(tokenAtKeyword, match)
 		}
 		return s.emitSimple(tokenChar, "@")
 	case ':':
+		// Another common one: Attachment or Char.
 		if match := matchers[tokenAttachment].FindString(input); match != "" {
 			return s.emitSimple(tokenAttachment, match)
 		}
 		return s.emitSimple(tokenColon, ":")
-	case '%', '&':
+	case '%':
+		return s.emitSimple(tokenModulo, string(input[0]))
+	// More common chars.
+	case '&':
 		return s.emitSimple(tokenChar, string(input[0]))
 	case ',':
 		return s.emitSimple(tokenComma, string(input[0]))
@@ -286,7 +318,9 @@ func (s *scanner) Next() *token {
 		return s.emitSimple(tokenMinus, string(input[0]))
 	case '*':
 		return s.emitSimple(tokenMultiply, string(input[0]))
+	// case '/': handled below
 	case '"', '\'':
+		// String or error.
 		match := matchers[tokenString].FindString(input)
 		if match != "" {
 			return s.emitToken(tokenString, match)
@@ -295,6 +329,7 @@ func (s *scanner) Next() *token {
 			return s.err
 		}
 	case '/':
+		// Comment, error or Char.
 		if len(input) > 1 && input[1] == '*' {
 			match := matchers[tokenComment].FindString(input)
 			if match != "" {
@@ -306,17 +341,21 @@ func (s *scanner) Next() *token {
 		} else if len(input) > 1 && input[1] == '/' {
 			idx := strings.Index(input, "\n")
 			if idx < 0 {
+				// comment at end of document wihout new line
 				idx = len(input)
 			}
 			return s.emitToken(tokenComment, input[:idx])
 		}
 		return s.emitSimple(tokenDivide, "/")
 	}
+	// Test all regexps, in order.
 	for _, token := range matchOrder {
 		if match := matchers[token].FindString(input); match != "" {
 			return s.emitToken(token, match)
 		}
 	}
+	// We already handled unclosed quotation marks and comments,
+	// so this can only be a Char.
 	r, width := utf8.DecodeRuneInString(input)
 	token := &token{tokenChar, string(r), s.row, s.col}
 	s.col += width
@@ -324,6 +363,7 @@ func (s *scanner) Next() *token {
 	return token
 }
 
+// updatePosition updates input coordinates based on the consumed text.
 func (s *scanner) updatePosition(text string) {
 	width := utf8.RuneCountInString(text)
 	lines := strings.Count(text, "\n")
@@ -336,12 +376,17 @@ func (s *scanner) updatePosition(text string) {
 	s.pos += len(text)
 }
 
+// emitToken returns a token for the string v and updates the scanner position.
 func (s *scanner) emitToken(t tokenType, v string) *token {
 	token := &token{t, v, s.row, s.col}
 	s.updatePosition(v)
 	return token
 }
 
+// emitSimple returns a token for the string v and updates the scanner
+// position in a simplified manner.
+//
+// The string is known to have only ASCII characters and to not have a newline.
 func (s *scanner) emitSimple(t tokenType, v string) *token {
 	token := &token{t, v, s.row, s.col}
 	s.col += len(v)
