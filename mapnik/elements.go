@@ -2,6 +2,8 @@ package mapnik
 
 import (
 	"encoding/xml"
+
+	flywave "github.com/flywave/flywave-mapnik"
 )
 
 type XMLMap struct {
@@ -42,16 +44,20 @@ type Rule struct {
 	MinScaleDenom int    `xml:"MinScaleDenominator,omitempty"`
 	Filter        string `xml:"Filter,omitempty"`
 	Symbolizers   []interface{}
+	fsRule        *flywave.Rule `xml:"-"`
 }
 
 type Symbolizer struct {
 	LineSymbolizer           *LineSymbolizer
+	LinePatternSymbolizer    *LinePatternSymbolizer
 	PolygonSymbolizer        *PolygonSymbolizer
 	PolygonPatternSymbolizer *PolygonPatternSymbolizer
 	PointSymbolizer          *PointSymbolizer
 	TextSymbolizer           *TextSymbolizer
 	MarkersSymbolizer        *MarkersSymbolizer
 	ShieldSymbolizer         *ShieldSymbolizer
+	BuildingSymbolizer       *BuildingSymbolizer
+	DotSymbolizer            *DotSymbolizer
 	RasterSymbolizer         *RasterSymbolizer
 }
 

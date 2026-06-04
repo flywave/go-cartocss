@@ -59,3 +59,11 @@ func WrapWhere(query, where string) string {
 	}
 	return "(SELECT * FROM " + query + " WHERE " + where + ") as filtered"
 }
+
+func pqSelectString(query string, rules []cartocss.Rule, autoTypeFilter bool) string {
+	if !autoTypeFilter {
+		return query
+	}
+	filter := FilterString(rules)
+	return WrapWhere(query, filter)
+}
