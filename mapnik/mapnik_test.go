@@ -369,3 +369,323 @@ func TestLayerFilterSetEmpty(t *testing.T) {
 	assert.Equal(t, "empty", lfs.LayerID)
 	assert.Empty(t, lfs.Groups)
 }
+
+func TestLayerFilterSetLabelFormatting(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+		}},
+		{Filters: []cartocss.Filter{
+			{Field: "scalerank", CompOp: cartocss.GTE, Value: float64(5)},
+		}},
+		{Filters: []cartocss.Filter{}},
+	}
+	lfs := NewLayerFilterSet("roads", rules)
+	assert.Equal(t, 3, len(lfs.Groups))
+	assert.Equal(t, "type = 'motorway'", lfs.Groups[0].Label)
+	assert.Equal(t, "scalerank >= 5", lfs.Groups[1].Label)
+	assert.Equal(t, "*", lfs.Groups[2].Label)
+}
+
+func TestFilterSetFields(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "scalerank", CompOp: cartocss.LTE, Value: float64(3)},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	fields := fs.Fields()
+	assert.ElementsMatch(t, []string{"type", "scalerank"}, fields)
+}
+
+func TestFilterSetFieldConditionsMissing(t *testing.T) {
+	fs := NewFilterSet(nil)
+	assert.Nil(t, fs.FieldConditions("nonexistent"))
+}
+
+func TestFilterSetMatchesNilAttrs(t *testing.T) {
+	fs := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+		}},
+	})
+	assert.False(t, fs.Matches(nil))
+}
+
+func TestFilterSetMatchesNEQ(t *testing.T) {
+	fs := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.NEQ, Value: "motorway"},
+		}},
+	})
+	assert.True(t, fs.Matches(map[string]interface{}{"type": "residential"}))
+	assert.False(t, fs.Matches(map[string]interface{}{"type": "motorway"}))
+}
+
+func TestFilterSetMatchesGT_LT(t *testing.T) {
+	fs := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "scalerank", CompOp: cartocss.GT, Value: float64(3)},
+		}},
+	})
+	assert.True(t, fs.Matches(map[string]interface{}{"scalerank": float64(5)}))
+	assert.False(t, fs.Matches(map[string]interface{}{"scalerank": float64(3)}))
+
+	fs2 := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "scalerank", CompOp: cartocss.LT, Value: float64(3)},
+		}},
+	})
+	assert.True(t, fs2.Matches(map[string]interface{}{"scalerank": float64(1)}))
+	assert.False(t, fs2.Matches(map[string]interface{}{"scalerank": float64(3)}))
+}
+
+func TestFilterSetMatchesNonNumeric(t *testing.T) {
+	fs := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "scalerank", CompOp: cartocss.GT, Value: "not-a-number"},
+		}},
+	})
+	assert.False(t, fs.Matches(map[string]interface{}{"scalerank": float64(5)}))
+}
+
+func TestFilterSetMatchesREGEX_MODULO(t *testing.T) {
+	fs := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "name", CompOp: cartocss.REGEX, Value: "^A"},
+		}},
+	})
+	assert.True(t, fs.Matches(map[string]interface{}{"name": "anything"}))
+
+	fs2 := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "id", CompOp: cartocss.MODULO, Value: cartocss.ModuloComparsion{Div: 2, CompOp: cartocss.EQ, Value: 0}},
+		}},
+	})
+	assert.True(t, fs2.Matches(map[string]interface{}{"id": float64(5)}))
+}
+
+func TestFilterSetModuloValue(t *testing.T) {
+	mc := cartocss.ModuloComparsion{Div: 2, CompOp: cartocss.EQ, Value: 0}
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "id", CompOp: cartocss.MODULO, Value: mc},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	assert.True(t, fs.HasField("id"))
+	conds := fs.FieldConditions("id")
+	assert.Equal(t, 1, len(conds))
+	assert.Equal(t, cartocss.MODULO, conds[0].Op)
+	assert.Equal(t, mc, conds[0].Value)
+}
+
+func TestFilterSetDedupByField(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	vals := fs.FieldValues("type")
+	assert.Equal(t, 1, len(vals))
+}
+
+func TestToFloat(t *testing.T) {
+	_, ok := toFloat("string")
+	assert.False(t, ok)
+
+	v, ok := toFloat(float64(3.14))
+	assert.True(t, ok)
+	assert.Equal(t, 3.14, v)
+
+	v, ok = toFloat(int(42))
+	assert.True(t, ok)
+	assert.Equal(t, float64(42), v)
+
+	v, ok = toFloat(uint8(8))
+	assert.True(t, ok)
+	assert.Equal(t, float64(8), v)
+
+	v, ok = toFloat(uint32(32))
+	assert.True(t, ok)
+	assert.Equal(t, float64(32), v)
+
+	v, ok = toFloat(uint64(64))
+	assert.True(t, ok)
+	assert.Equal(t, float64(64), v)
+
+	v, ok = toFloat(int32(-32))
+	assert.True(t, ok)
+	assert.Equal(t, float64(-32), v)
+
+	v, ok = toFloat(int64(-64))
+	assert.True(t, ok)
+	assert.Equal(t, float64(-64), v)
+}
+
+func TestFormatDashArray(t *testing.T) {
+	assert.Equal(t, "2, 4, 6", formatDashArray([]float64{2, 4, 6}, 1.0))
+	assert.Equal(t, "4, 8, 12", formatDashArray([]float64{2, 4, 6}, 2.0))
+	assert.Equal(t, "1.5, 3.5", formatDashArray([]float64{1.5, 3.5}, 1.0))
+}
+
+func TestIsOgrConnection(t *testing.T) {
+	assert.True(t, isOgrConnection.MatchString("PG:dbname=mydb"))
+	assert.True(t, isOgrConnection.MatchString("MySQL:host=localhost"))
+	assert.True(t, isOgrConnection.MatchString("ESRI:file.gdb"))
+	assert.False(t, isOgrConnection.MatchString("/path/to/file.shp"))
+	assert.False(t, isOgrConnection.MatchString("relative/file.shp"))
+}
+
+func TestSetAutoTypeFilter(t *testing.T) {
+	m := New(newTestLocator())
+	m.SetAutoTypeFilter(true)
+	m.SetAutoTypeFilter(false)
+}
+
+func TestSetZoomScales(t *testing.T) {
+	m := New(newTestLocator())
+	custom := []int{1000000, 500000, 250000}
+	m.SetZoomScales(custom)
+}
+
+func TestWriteNilMap(t *testing.T) {
+	m := &Map{}
+	var buf strings.Builder
+	err := m.Write(&buf)
+	assert.NoError(t, err)
+	assert.Empty(t, buf.String())
+}
+
+func TestAddLayerWithZoom(t *testing.T) {
+	mss := `#layer[zoom>=10][zoom<=15] { line-width: 2; line-color: #ff0; }`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.LineString, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerWithScaleFactor(t *testing.T) {
+	mss := `#layer { line-width: 2; line-color: #ff0; }`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.LineString, Active: true, ScaleFactor: 2.0}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerWithCompOp(t *testing.T) {
+	mss := `#layer { line-width: 2; line-color: #ff0; comp-op: multiply; opacity: 0.5; }`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.LineString, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerBuilding(t *testing.T) {
+	mss := `#layer { building-fill: #ccc; building-height: 20; building-fill-opacity: 0.8; }`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.Polygon, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerDot(t *testing.T) {
+	mss := `#layer { dot-fill: #f00; dot-width: 4; dot-height: 4; dot-opacity: 0.9; }`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.Point, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerLinePattern(t *testing.T) {
+	d := newTestDecoder(t, `#layer { line-pattern-file: url(pat.png); line-pattern-offset: 2; }`)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.LineString, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerPolygonPattern(t *testing.T) {
+	d := newTestDecoder(t, `#layer { polygon-pattern-file: url(pat.png); polygon-pattern-alignment: local; }`)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.Polygon, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerRasterColorizer(t *testing.T) {
+	mss := `#layer {
+		raster-opacity: 1;
+		raster-colorizer-default-mode: linear;
+		raster-colorizer-default-color: transparent;
+		raster-colorizer-epsilon: 0.1;
+		raster-colorizer-stops: stop(0, #0000ff), stop(100, #ff0000);
+	}`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.Raster, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerWithFilters(t *testing.T) {
+	mss := `#layer[type='motorway'] { line-width: 2; line-color: #ff0; }`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.LineString, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestAddLayerWithAttachment(t *testing.T) {
+	mss := `
+		#layer::outline { line-width: 4; line-color: #000; }
+		#layer { line-width: 2; line-color: #f00; }
+	`
+	d := newTestDecoder(t, mss)
+	layer := cartocss.Layer{ID: "layer", Type: cartocss.LineString, Active: true}
+
+	m := New(newTestLocator())
+	assert.NotPanics(t, func() {
+		m.AddLayer(layer, d.MSS().LayerZoomRules("layer", cartocss.AllZoom))
+	})
+}
+
+func TestFilterSetConditionCount(t *testing.T) {
+	fs := NewFilterSet(nil)
+	assert.Equal(t, 0, fs.ConditionCount())
+
+	fs2 := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "a", CompOp: cartocss.EQ, Value: "1"},
+			{Field: "b", CompOp: cartocss.EQ, Value: "2"},
+		}},
+	})
+	assert.Equal(t, 2, fs2.ConditionCount())
+}
