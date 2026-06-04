@@ -31,67 +31,6 @@ func fmtField(vals []interface{}, ok bool) *string {
 	return &r
 }
 
-func fmtPattern(v []float64, scale float64, ok bool) *string {
-	if !ok {
-		return nil
-	}
-	return fmtPatternStr(v, scale)
-}
-
-func fmtPatternStr(v []float64, scale float64) *string {
-	parts := make([]string, 0, len(v))
-	for i := range v {
-		parts = append(parts, strconv.FormatFloat(v[i]*scale, 'f', -1, 64))
-	}
-	r := strings.Join(parts, ", ")
-	return &r
-}
-
-func fmtFloatProp(p *cartocss.Properties, name string, scale float64) *string {
-	v, ok := p.GetFloat(name)
-	if !ok {
-		return nil
-	}
-	r := strconv.FormatFloat(v*scale, 'f', -1, 64)
-	return &r
-}
-
-func fmtFloat(v float64, ok bool) *string {
-	if !ok {
-		return nil
-	}
-	r := strconv.FormatFloat(v, 'f', -1, 64)
-	return &r
-}
-
-func fmtString(v string, ok bool) *string {
-	if !ok {
-		return nil
-	}
-	return &v
-}
-
-func fmtBool(v bool, ok bool) *string {
-	if !ok {
-		return nil
-	}
-	var r string
-	if v {
-		r = "true"
-	} else {
-		r = "false"
-	}
-	return &r
-}
-
-func fmtColor(v color.Color, ok bool) *string {
-	if !ok {
-		return nil
-	}
-	r := v.String()
-	return &r
-}
-
 func fmtFilters(filters []cartocss.Filter) string {
 	parts := []string{}
 	for _, f := range filters {
@@ -102,7 +41,7 @@ func fmtFilters(filters []cartocss.Filter) string {
 		case string:
 			value = `'` + v + `'`
 		case float64:
-			value = string(*fmtFloat(v, true))
+			value = strconv.FormatFloat(v, 'f', -1, 64)
 		case cartocss.ModuloComparsion:
 			value = fmt.Sprintf("%d %s %d", v.Div, v.CompOp, v.Value)
 		default:
@@ -119,12 +58,16 @@ func fmtFilters(filters []cartocss.Filter) string {
 			parts = append(parts, "(["+field+"] "+f.CompOp.String()+" "+value+")")
 		}
 	}
-
 	s := strings.Join(parts, " and ")
 	if len(filters) > 1 {
 		s = "(" + s + ")"
 	}
 	return s
+}
+
+func colorToRGBA(c color.Color) (uint8, uint8, uint8, uint8) {
+	r, g, b := c.ToRgb()
+	return uint8(r*255 + 0.5), uint8(g*255 + 0.5), uint8(b*255 + 0.5), uint8(c.A*255 + 0.5)
 }
 
 var webmercZoomScales = []int{

@@ -61,7 +61,7 @@ b.Build()
 - Commits use generic "update" messages — review code diffs, not commit messages.
 - The `mapnik` package is the only concrete `builder.Map` implementation in this repo.
 - `mapnik/` uses `github.com/flywave/flywave-mapnik` with local `replace` directive (`../flywave-mapnik`); builds native mapnik `Style`/`Rule`/`Symbolizer` objects via C API instead of XML.
-- The `elements.go` XML types are kept for `Write`/`WriteFiles` backward compat (`builder.Cache`). New code calls `AddLayer` to build natively.
+- No XML serialization code exists anymore. `Write`/`WriteFiles` are no-ops kept only for `builder.MapWriter` interface compat.
 - `go build ./...` succeeds without C libraries if flywave-mapnik is precompiled (its CGo headers/libs must be present at build time).
 
 ### Native API coverage by symbolizer type
