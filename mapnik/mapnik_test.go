@@ -310,3 +310,62 @@ func BenchmarkAddLayer(b *testing.B) {
 		}
 	}
 }
+
+func TestFilterSetMatches(t *testing.T) {
+	fs := NewFilterSet([]cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "scalerank", CompOp: cartocss.LTE, Value: float64(3)},
+		}},
+	})
+	assert.True(t, fs.Matches(map[string]interface{}{"type": "motorway", "scalerank": float64(1)}))
+	assert.False(t, fs.Matches(map[string]interface{}{"type": "motorway", "scalerank": float64(5)}))
+	assert.False(t, fs.Matches(map[string]interface{}{"type": "residential", "scalerank": float64(1)}))
+	assert.False(t, fs.Matches(map[string]interface{}{"type": "motorway"}))
+}
+
+func TestFilterSetMatchesUnfiltered(t *testing.T) {
+	fs := NewFilterSet(nil)
+	assert.True(t, fs.Matches(map[string]interface{}{}))
+	assert.True(t, fs.Matches(nil))
+}
+
+func TestLayerFilterSet(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+		}},
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "residential"},
+		}},
+		{}, // no filters
+	}
+	lfs := NewLayerFilterSet("roads", rules)
+	assert.Equal(t, "roads", lfs.LayerID)
+	assert.Equal(t, 3, len(lfs.Groups))
+}
+
+func TestLayerFilterSetGroupLabel(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+		}},
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+		}},
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "residential"},
+		}},
+	}
+	lfs := NewLayerFilterSet("roads", rules)
+	groups := lfs.Groups
+	assert.Equal(t, 2, len(groups))
+	assert.Equal(t, 2, len(groups[0].RuleEntries))
+	assert.Equal(t, 1, len(groups[1].RuleEntries))
+}
+
+func TestLayerFilterSetEmpty(t *testing.T) {
+	lfs := NewLayerFilterSet("empty", nil)
+	assert.Equal(t, "empty", lfs.LayerID)
+	assert.Empty(t, lfs.Groups)
+}
