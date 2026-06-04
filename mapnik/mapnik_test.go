@@ -168,21 +168,87 @@ func TestMaker3(t *testing.T) {
 	assert.Equal(t, ".xml", Maker3.FileSuffix())
 }
 
-func TestFilterString(t *testing.T) {
+func TestFilterSet(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "class", CompOp: cartocss.EQ, Value: "primary"},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	assert.True(t, fs.HasField("type"))
+	assert.True(t, fs.HasField("class"))
+	assert.Equal(t, 2, fs.FilteredFieldCount())
+
+	vals := fs.FieldValues("type")
+	assert.Equal(t, []interface{}{"motorway"}, vals)
+}
+
+func TestFilterSetDedup(t *testing.T) {
 	rules := []cartocss.Rule{
 		{Filters: []cartocss.Filter{
 			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
 		}},
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "type", CompOp: cartocss.EQ, Value: "residential"},
+		}},
 	}
-	result := FilterString(rules)
-	assert.Equal(t, `("type" IN ('motorway'))`, result)
+	fs := NewFilterSet(rules)
+	vals := fs.FieldValues("type")
+	assert.Equal(t, 2, len(vals))
 }
 
-func TestWrapWhere(t *testing.T) {
-	result := WrapWhere("roads", `"type" IN ('motorway')`)
-	assert.Equal(t, "(SELECT * FROM roads WHERE \"type\" IN ('motorway')) as filtered", result)
-	result2 := WrapWhere("roads", "")
-	assert.Equal(t, "roads", result2)
+func TestFilterSetNonEqFilters(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "scalerank", CompOp: cartocss.GTE, Value: float64(5)},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	assert.True(t, fs.HasField("scalerank"))
+	assert.Empty(t, fs.FieldValues("scalerank"))
+	assert.Equal(t, 1, fs.FilteredFieldCount())
+
+	conds := fs.FieldConditions("scalerank")
+	assert.Equal(t, 1, len(conds))
+	assert.Equal(t, cartocss.GTE, conds[0].Op)
+	assert.Equal(t, float64(5), conds[0].Value)
+}
+
+func TestFilterSetEmpty(t *testing.T) {
+	fs := NewFilterSet(nil)
+	assert.Equal(t, 0, fs.FilteredFieldCount())
+	assert.Equal(t, 0, fs.ConditionCount())
+	assert.Empty(t, fs.Fields())
+}
+
+func TestFilterSetConditions(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "scalerank", CompOp: cartocss.LTE, Value: float64(3)},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	conds := fs.Conditions()
+	assert.Equal(t, 2, len(conds))
+}
+
+func TestFilterSetMultipleValues(t *testing.T) {
+	rules := []cartocss.Rule{
+		{Filters: []cartocss.Filter{
+			{Field: "type", CompOp: cartocss.EQ, Value: "motorway"},
+			{Field: "type", CompOp: cartocss.EQ, Value: "residential"},
+			{Field: "type", CompOp: cartocss.EQ, Value: "trunk"},
+		}},
+	}
+	fs := NewFilterSet(rules)
+	vals := fs.FieldValues("type")
+	assert.Equal(t, 3, len(vals))
+	assert.Contains(t, vals, "motorway")
+	assert.Contains(t, vals, "residential")
+	assert.Contains(t, vals, "trunk")
 }
 
 func TestColorToRGBA(t *testing.T) {

@@ -10,7 +10,7 @@ CartoCSS parser and Mapnik XML serializer in Go. Module `github.com/flywave/go-c
 | `color/` | HSL-based color model, parse/manipulate CSS colors |
 | `config/` | TOML config loader, resource locator with lookup dirs |
 | `builder/` | Builds map styles from MML + MSS files, optional caching layer |
-| `mapnik/` | Builds styles directly on `flywave-mapnik` Map (native C API), `builder.Map` + `MapWriter` impl |
+| `mapnik/` | Builds styles directly on `flywave-mapnik` Map (native C API), `builder.Map` + `MapWriter` impl, general `FilterSet` for data-source-agnostic rule filtering |
 
 ## Commands
 
